@@ -79,7 +79,7 @@ app.post('/api/auth/forgot-password', asyncRoute(async (req, res) => {
   if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.MAIL_FROM) {
     const transport = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT || 587), secure: process.env.SMTP_SECURE === 'true', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } });
     const base = process.env.PUBLIC_APP_URL || '';
-    await transport.sendMail({ from: process.env.MAIL_FROM, to: user.email, subject: 'Redefinição de senha — HSI Visual Cognitivo', text: 'Para redefinir sua senha, acesse: ' + base + '/reset-password?token=' + rawToken + '\nO link expira em 30 minutos.' });
+    await transport.sendMail({ from: process.env.MAIL_FROM, to: user.email, subject: 'Redefinição de senha — HSI Visual Cognitivo', text: 'Para redefinir sua senha, acesse: ' + base + '/reset-password.html?token=' + rawToken + '\nO link expira em 30 minutos.' });
   }
   return res.json(generic);
 }));
