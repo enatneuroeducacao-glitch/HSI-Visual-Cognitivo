@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { FormEvent } from 'react';
 import { auth } from './lib/api';
 
 export default function ResetPassword() {
@@ -8,7 +9,7 @@ export default function ResetPassword() {
  const [message,setMessage]=useState('');
  const [error,setError]=useState('');
  const [done,setDone]=useState(false);
- const submit=async(e:React.FormEvent)=>{
+ const submit=async(e:FormEvent)=>{
   e.preventDefault();setError('');setMessage('');
   if(password.length<12){setError('A senha deve ter pelo menos 12 caracteres.');return;}
   if(password!==confirm){setError('As senhas não conferem.');return;}
