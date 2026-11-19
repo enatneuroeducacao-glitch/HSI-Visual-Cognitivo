@@ -9,6 +9,7 @@ import crypto from 'node:crypto';
 import nodemailer from 'nodemailer';
 import { PrismaClient, UserRole, UserStatus } from '@prisma/client';
 import { z } from 'zod';
+import { questions } from './question-bank.js';
 
 const prisma = new PrismaClient();
 const app = express();
@@ -138,7 +139,7 @@ app.post('/api/groups', authenticate, allow(UserRole.ADMIN), asyncRoute(async (r
 const resultSchema = z.object({
   id:z.string().min(8).max(100),participantCode:z.string().max(60),mode:z.string().max(100),completedAt:z.string().datetime(),
   totalQuestions:z.number().int().min(1).max(30),correct:z.number().int().min(0).max(30),accuracy:z.number().int().min(0).max(100),
-  durationSeconds:z.number().int().min(1).max(86400),axes:z.array(z.record(z.unknown())).max(6),answerDetails:z.array(z.record(z.unknown())).max(30).optional()
+  durationSeconds:z.number().int().min(1).max(86400),axes:z.array(z.record(z.unknown())).max(6),answerDetails:z.array(z.record(z.unknown())).min(1).max(30)
 });
 app.get('/api/results', authenticate, asyncRoute(async (req,res) => {
   const rows=await prisma.assessmentResult.findMany({where:{userId:req.authUser!.id},orderBy:{completedAt:'desc'},take:200});
@@ -148,8 +149,28 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
   const parsed=resultSchema.safeParse(req.body);
   if(!parsed.success) return res.status(400).json({error:'Resultado inválido.',details:parsed.error.flatten()});
   const d=parsed.data;
-  if(d.correct>d.totalQuestions || d.accuracy!==Math.round(d.correct/d.totalQuestions*100)) return res.status(400).json({error:'Os totais e a precisão não conferem.'});
-  const result=await prisma.assessmentResult.upsert({where:{id:d.id},create:{id:d.id,userId:req.authUser!.id,participantCode:req.authUser!.participantCode || d.participantCode,mode:d.mode,completedAt:new Date(d.completedAt),totalQuestions:d.totalQuestions,correct:d.correct,accuracy:d.accuracy,durationSeconds:d.durationSeconds,axes:d.axes,answerDetails:d.answerDetails || []},update:{}});
+  const bank = new Map(questions.map((q: any) => [q.id, q]));
+  if (d.answerDetails.length !== d.totalQuestions) return res.status(400).json({error:'Quantidade de respostas não corresponde ao total informado.'});
+  const seen = new Set<string>();
+  const verified = d.answerDetails.map((raw: Record<string, unknown>) => {
+    const questionId = String(raw.questionId || '');
+    const question = bank.get(questionId) as any;
+    const selected = Number(raw.selected);
+    const seconds = Number(raw.seconds);
+    if (!question || seen.has(questionId) || !Number.isInteger(selected) || selected < 0 || selected >= question.options.length || !Number.isFinite(seconds) || seconds < 1 || seconds > 3600 || raw.axisId !== question.axis) throw new Error('INVALID_ANSWER');
+    seen.add(questionId);
+    return { questionId, axisId: question.axis, selected, correct: selected === question.answer, seconds, prompt: question.prompt, selectedOption: question.options[selected], correctOption: question.options[question.answer] };
+  });
+  const correct = verified.filter(a => a.correct).length;
+  const accuracy = Math.round(correct / verified.length * 100);
+  if (correct !== d.correct || accuracy !== d.accuracy) return res.status(400).json({error:'Pontuação enviada não corresponde às respostas registradas.'});
+  const axes = [...new Set(verified.map(a => a.axisId))].map(axisId => {
+    const rows = verified.filter(a => a.axisId === axisId);
+    const axisQuestion = questions.find((q: any) => q.axis === axisId) as any;
+    const axisCorrect = rows.filter(a => a.correct).length;
+    return { axisId, title: axisQuestion.axis, correct: axisCorrect, total: rows.length, accuracy: Math.round(axisCorrect / rows.length * 100), averageSeconds: Math.round(rows.reduce((sum,a) => sum + a.seconds, 0) / rows.length) };
+  });
+  const result=await prisma.assessmentResult.upsert({where:{id:d.id},create:{id:d.id,userId:req.authUser!.id,participantCode:req.authUser!.participantCode || d.participantCode,mode:d.mode,completedAt:new Date(d.completedAt),totalQuestions:verified.length,correct,accuracy,durationSeconds:d.durationSeconds,axes,answerDetails:verified},update:{}});
   await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'ASSESSMENT_SUBMIT',targetType:'RESULT',targetId:result.id}});
   res.status(201).json({result});
 }));
@@ -172,6 +193,7 @@ app.get('/api/analytics', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), 
 }));
 
 app.use((err: unknown,_req:Request,res:Response,_next:NextFunction) => {
+  if (err instanceof Error && err.message === 'INVALID_ANSWER') return res.status(400).json({error:'Resposta inválida ou questão não reconhecida.'});
   console.error(err);
   if (err && typeof err === 'object' && 'code' in err && err.code === 'P2002') return res.status(409).json({error:'Já existe um registro com esses dados.'});
   return res.status(500).json({error:'Erro interno. Consulte os registros do serviço.'});
