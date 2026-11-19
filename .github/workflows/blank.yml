@@ -26,13 +26,21 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install dependencies
+      - name: Install frontend dependencies
         run: npm install
-      - name: Build application
+      - name: Build frontend
+        run: npm run build
+      - name: Install API dependencies and generate Prisma client
+        working-directory: backend
+        run: npm install && npx prisma generate
+      - name: Build API
+        working-directory: backend
         run: npm run build
       - name: Configure Pages
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5
       - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
