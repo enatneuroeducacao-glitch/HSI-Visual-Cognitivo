@@ -2,7 +2,7 @@ name: Build and deploy HSI Visual Cognitivo to GitHub Pages
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "feature/operational-platform"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
