@@ -488,7 +488,6 @@ function App() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [resetMessage, setResetMessage] = useState('');
-  const [participantCode, setParticipantCode] = useState('');
   const [mode, setMode] = useState('full');
   const [runQuestions, setRunQuestions] = useState<Question[]>([]);
   const [index, setIndex] = useState(0);
@@ -762,7 +761,7 @@ function App() {
     const correct = finalAnswers.filter(a => a.correct).length;
     const result: SavedResult = {
       id: crypto.randomUUID(),
-      participantCode: participantCode.trim() || 'SEM-CÓDIGO',
+      participantCode: user.participantCode || 'SEM-CÓDIGO',
       mode: mode === 'full' ? 'Avaliação completa' : 'Eixo individual',
       completedAt: new Date().toISOString(),
       totalQuestions: finalAnswers.length,
@@ -1040,12 +1039,6 @@ function App() {
                 </p>
               </div>
               <div className="start-action">
-                <input
-                  value={participantCode}
-                  onChange={e => setParticipantCode(e.target.value)}
-                  placeholder="Código do participante (opcional)"
-                  aria-label="Código do participante"
-                />
                 <button className="primary" onClick={() => startTest()}>
                   Iniciar avaliação completa <span>→</span>
                 </button>
