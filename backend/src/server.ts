@@ -49,7 +49,7 @@ const allow = (...roles: UserRole[]) => (req: Request, res: Response, next: Next
   req.authUser && roles.includes(req.authUser.role) ? next() : res.status(403).json({ error: 'Você não tem permissão para esta operação.' });
 
 const loginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(200) });
-app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'hsi-visual-cognitivo-api', timestamp: new Date().toISOString() }));
+app.get('/api/health', asyncRoute(async (_req, res) => { await prisma.$queryRawUnsafe('SELECT 1'); res.json({ status: 'ok', database: 'connected', service: 'hsi-visual-cognitivo-api', timestamp: new Date().toISOString() }); }));
 
 app.post('/api/auth/login', asyncRoute(async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
@@ -68,6 +68,7 @@ app.get('/api/auth/me', authenticate, (req, res) => res.json({ user: publicUser(
 app.post('/api/auth/forgot-password', asyncRoute(async (req, res) => {
   const email = z.string().email().safeParse(req.body?.email);
   if (!email.success) return res.status(400).json({ error: 'Informe um e-mail válido.' });
+  if (!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.MAIL_FROM)) return res.status(503).json({ error: 'O serviço de recuperação de senha ainda não foi configurado. Procure o administrador da plataforma.' });
   const user = await prisma.user.findUnique({ where: { email: email.data.toLowerCase() } });
   const generic = { message: 'Se o endereço estiver cadastrado, você receberá instruções para redefinir a senha.' };
   if (!user || user.status !== UserStatus.ACTIVE) return res.json(generic);
@@ -78,11 +79,7 @@ app.post('/api/auth/forgot-password', asyncRoute(async (req, res) => {
   if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.MAIL_FROM) {
     const transport = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT || 587), secure: process.env.SMTP_SECURE === 'true', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } });
     const base = process.env.PUBLIC_APP_URL || '';
-    await transport.sendMail({ from: process.env.MAIL_FROM, to: user.email, subject: 'Redefinição de senha — HSI Visual Cognitivo', text: 'Para redefinir sua senha, acesse: ' + base + '/reset-password?token=' + rawToken + '\nO link expira em 30 minutos.' });
-  } else if (process.env.NODE_ENV !== 'production') {
-    console.info('DEV password reset token:', rawToken);
-  } else {
-    console.error('SMTP não configurado: fluxo de recuperação está indisponível até configurar SMTP.');
+    await transport.sendMail({ from: process.env.MAIL_FROM, to: user.email, subject: 'Redefinição de senha — HSI Visual Cognitivo', text: 'Para redefinir sua senha, acesse: ' + base + '/reset-password.html?token=' + rawToken + '\nO link expira em 30 minutos.' });
   }
   return res.json(generic);
 }));
@@ -121,8 +118,8 @@ app.patch('/api/users/:id', authenticate, allow(UserRole.ADMIN), asyncRoute(asyn
   const schema = z.object({ name:z.string().trim().min(2).max(120).optional(),role:z.enum(['PARTICIPANT','ANALYST','ADMIN']).optional(),status:z.enum(['ACTIVE','INVITED','DISABLED']).optional(),participantCode:z.string().trim().max(60).nullable().optional(),groupId:z.string().nullable().optional() });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({error:'Dados inválidos.'});
-  if (req.params.id === req.authUser!.id && (parsed.data.role && parsed.data.role !== 'ADMIN' || parsed.data.status === 'DISABLED')) return res.status(400).json({error:'Não é permitido remover seu próprio acesso administrativo.'});
-  const user = await prisma.user.update({ where:{id:req.params.id},data:parsed.data,select:{id:true,name:true,email:true,role:true,status:true,participantCode:true,groupId:true} });
+  if (String(req.params.id) === req.authUser!.id && (parsed.data.role && parsed.data.role !== 'ADMIN' || parsed.data.status === 'DISABLED')) return res.status(400).json({error:'Não é permitido remover seu próprio acesso administrativo.'});
+  const user = await prisma.user.update({ where:{id:String(req.params.id)},data:parsed.data,select:{id:true,name:true,email:true,role:true,status:true,participantCode:true,groupId:true} });
   await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'USER_UPDATE',targetType:'USER',targetId:user.id,metadata:parsed.data}});
   res.json({user});
 }));
@@ -162,16 +159,21 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
     seen.add(questionId);
     return { questionId, axisId: question.axis, selected, correct: selected === question.answer, seconds, prompt: question.prompt, selectedOption: question.options[selected], correctOption: question.options[question.answer] };
   });
+  if (d.mode === 'Avaliação completa' && verified.length !== questions.length) return res.status(400).json({error:'A avaliação completa deve conter os 30 exercícios.'});
+  if (d.mode === 'Eixo individual' && (verified.length !== 5 || new Set(verified.map(a => a.axisId)).size !== 1)) return res.status(400).json({error:'A avaliação individual deve conter os cinco exercícios de um único eixo.'});
+  if (!['Avaliação completa','Eixo individual'].includes(d.mode)) return res.status(400).json({error:'Modalidade de avaliação inválida.'});
   const correct = verified.filter(a => a.correct).length;
   const accuracy = Math.round(correct / verified.length * 100);
   if (correct !== d.correct || accuracy !== d.accuracy) return res.status(400).json({error:'Pontuação enviada não corresponde às respostas registradas.'});
   const axes = [...new Set(verified.map(a => a.axisId))].map(axisId => {
     const rows = verified.filter(a => a.axisId === axisId);
-    const axisQuestion = questions.find((q: any) => q.axis === axisId) as any;
+    const axisTitles: Record<string,string> = { logic:'Raciocínio lógico', attention:'Atenção seletiva', patterns:'Percepção de padrões', anticipation:'Antecipação de situações', risk:'Percepção de riscos no trânsito', decision:'Tomada de decisão' };
     const axisCorrect = rows.filter(a => a.correct).length;
-    return { axisId, title: axisQuestion.axis, correct: axisCorrect, total: rows.length, accuracy: Math.round(axisCorrect / rows.length * 100), averageSeconds: Math.round(rows.reduce((sum,a) => sum + a.seconds, 0) / rows.length) };
+    return { axisId, title: axisTitles[axisId] || axisId, correct: axisCorrect, total: rows.length, accuracy: Math.round(axisCorrect / rows.length * 100), averageSeconds: Math.round(rows.reduce((sum,a) => sum + a.seconds, 0) / rows.length) };
   });
-  const result=await prisma.assessmentResult.upsert({where:{id:d.id},create:{id:d.id,userId:req.authUser!.id,participantCode:req.authUser!.participantCode || 'SEM-CÓDIGO',mode:d.mode,completedAt:new Date(d.completedAt),totalQuestions:verified.length,correct,accuracy,durationSeconds:d.durationSeconds,axes:axes as Prisma.InputJsonValue,answerDetails:verified as Prisma.InputJsonValue},update:{}});
+  const existing = await prisma.assessmentResult.findUnique({where:{id:d.id}});
+  if (existing && existing.userId !== req.authUser!.id) return res.status(409).json({error:'Identificador de resultado já utilizado.'});
+  const result = existing || await prisma.assessmentResult.create({data:{id:d.id,userId:req.authUser!.id,participantCode:req.authUser!.participantCode || 'SEM-CÓDIGO',mode:d.mode,completedAt:new Date(d.completedAt),totalQuestions:verified.length,correct,accuracy,durationSeconds:d.durationSeconds,axes:axes as Prisma.InputJsonValue,answerDetails:verified as Prisma.InputJsonValue}});
   await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'ASSESSMENT_SUBMIT',targetType:'RESULT',targetId:result.id}});
   res.status(201).json({result});
 }));
