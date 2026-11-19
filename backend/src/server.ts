@@ -11,6 +11,7 @@ import { PrismaClient, UserRole, UserStatus } from '@prisma/client';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { questions } from './question-bank.js';
+import { hasRole, validateAssessmentMode } from './security.js';
 
 const prisma = new PrismaClient();
 const app = express();
@@ -46,7 +47,7 @@ const authenticate = asyncRoute(async (req, res, next) => {
   } catch { return res.status(401).json({ error: 'Sessão expirada ou inválida.' }); }
 });
 const allow = (...roles: UserRole[]) => (req: Request, res: Response, next: NextFunction) =>
-  req.authUser && roles.includes(req.authUser.role) ? next() : res.status(403).json({ error: 'Você não tem permissão para esta operação.' });
+  hasRole(req.authUser?.role, roles) ? next() : res.status(403).json({ error: 'Você não tem permissão para esta operação.' });
 
 const loginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(200) });
 app.get('/api/health', asyncRoute(async (_req, res) => { await prisma.$queryRawUnsafe('SELECT 1'); res.json({ status: 'ok', database: 'connected', service: 'hsi-visual-cognitivo-api', timestamp: new Date().toISOString() }); }));
@@ -137,7 +138,7 @@ app.post('/api/groups', authenticate, allow(UserRole.ADMIN), asyncRoute(async (r
 const resultSchema = z.object({
   id:z.string().min(8).max(100),participantCode:z.string().max(60),mode:z.string().max(100),completedAt:z.string().datetime(),
   totalQuestions:z.number().int().min(1).max(30),correct:z.number().int().min(0).max(30),accuracy:z.number().int().min(0).max(100),
-  durationSeconds:z.number().int().min(1).max(86400),axes:z.array(z.record(z.unknown())).max(6),answerDetails:z.array(z.record(z.unknown())).min(1).max(30)
+  durationSeconds:z.number().int().min(1).max(86400),axes:z.array(z.record(z.string(), z.unknown())).max(6),answerDetails:z.array(z.record(z.string(), z.unknown())).min(1).max(30)
 });
 app.get('/api/results', authenticate, asyncRoute(async (req,res) => {
   const rows=await prisma.assessmentResult.findMany({where:{userId:req.authUser!.id},orderBy:{completedAt:'desc'},take:200});
@@ -159,9 +160,8 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
     seen.add(questionId);
     return { questionId, axisId: question.axis, selected, correct: selected === question.answer, seconds, prompt: question.prompt, selectedOption: question.options[selected], correctOption: question.options[question.answer] };
   });
-  if (d.mode === 'Avaliação completa' && verified.length !== questions.length) return res.status(400).json({error:'A avaliação completa deve conter os 30 exercícios.'});
-  if (d.mode === 'Eixo individual' && (verified.length !== 5 || new Set(verified.map(a => a.axisId)).size !== 1)) return res.status(400).json({error:'A avaliação individual deve conter os cinco exercícios de um único eixo.'});
-  if (!['Avaliação completa','Eixo individual'].includes(d.mode)) return res.status(400).json({error:'Modalidade de avaliação inválida.'});
+  const modeError = validateAssessmentMode(d.mode, verified.length, verified.map(a => a.axisId), questions.length);
+  if (modeError) return res.status(400).json({error:modeError});
   const correct = verified.filter(a => a.correct).length;
   const accuracy = Math.round(correct / verified.length * 100);
   if (correct !== d.correct || accuracy !== d.accuracy) return res.status(400).json({error:'Pontuação enviada não corresponde às respostas registradas.'});
