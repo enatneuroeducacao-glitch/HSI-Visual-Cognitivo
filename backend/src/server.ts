@@ -49,7 +49,7 @@ const allow = (...roles: UserRole[]) => (req: Request, res: Response, next: Next
   req.authUser && roles.includes(req.authUser.role) ? next() : res.status(403).json({ error: 'Você não tem permissão para esta operação.' });
 
 const loginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(200) });
-app.get('/api/health', asyncRoute(async (_req, res) => { await prisma.$queryRaw\`SELECT 1\`; res.json({ status: 'ok', database: 'connected', service: 'hsi-visual-cognitivo-api', timestamp: new Date().toISOString() }); }));
+app.get('/api/health', asyncRoute(async (_req, res) => { await prisma.$queryRawUnsafe('SELECT 1'); res.json({ status: 'ok', database: 'connected', service: 'hsi-visual-cognitivo-api', timestamp: new Date().toISOString() }); }));
 
 app.post('/api/auth/login', asyncRoute(async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
