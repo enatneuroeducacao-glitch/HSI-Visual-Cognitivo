@@ -49,7 +49,7 @@ const allow = (...roles: UserRole[]) => (req: Request, res: Response, next: Next
   req.authUser && roles.includes(req.authUser.role) ? next() : res.status(403).json({ error: 'Você não tem permissão para esta operação.' });
 
 const loginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(200) });
-app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'hsi-visual-cognitivo-api', timestamp: new Date().toISOString() }));
+app.get('/api/health', asyncRoute(async (_req, res) => { await prisma.$queryRaw\`SELECT 1\`; res.json({ status: 'ok', database: 'connected', service: 'hsi-visual-cognitivo-api', timestamp: new Date().toISOString() }); }));
 
 app.post('/api/auth/login', asyncRoute(async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
@@ -68,6 +68,7 @@ app.get('/api/auth/me', authenticate, (req, res) => res.json({ user: publicUser(
 app.post('/api/auth/forgot-password', asyncRoute(async (req, res) => {
   const email = z.string().email().safeParse(req.body?.email);
   if (!email.success) return res.status(400).json({ error: 'Informe um e-mail válido.' });
+  if (!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.MAIL_FROM)) return res.status(503).json({ error: 'O serviço de recuperação de senha ainda não foi configurado. Procure o administrador da plataforma.' });
   const user = await prisma.user.findUnique({ where: { email: email.data.toLowerCase() } });
   const generic = { message: 'Se o endereço estiver cadastrado, você receberá instruções para redefinir a senha.' };
   if (!user || user.status !== UserStatus.ACTIVE) return res.json(generic);
@@ -79,10 +80,6 @@ app.post('/api/auth/forgot-password', asyncRoute(async (req, res) => {
     const transport = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT || 587), secure: process.env.SMTP_SECURE === 'true', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } });
     const base = process.env.PUBLIC_APP_URL || '';
     await transport.sendMail({ from: process.env.MAIL_FROM, to: user.email, subject: 'Redefinição de senha — HSI Visual Cognitivo', text: 'Para redefinir sua senha, acesse: ' + base + '/reset-password?token=' + rawToken + '\nO link expira em 30 minutos.' });
-  } else if (process.env.NODE_ENV !== 'production') {
-    console.info('DEV password reset token:', rawToken);
-  } else {
-    console.error('SMTP não configurado: fluxo de recuperação está indisponível até configurar SMTP.');
   }
   return res.json(generic);
 }));
