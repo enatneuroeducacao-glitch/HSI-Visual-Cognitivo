@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  ANALYST
+  PARTICIPANT
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+model User {
+  id                 String       @id @default(cuid())
+  name               String
+  email              String       @unique
+  passwordHash       String
+  role               UserRole     @default(PARTICIPANT)
+  status             UserStatus   @default(INVITED)
+  participantCode    String?      @unique
+  groupId            String?
+  group              ParticipantGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  results            AssessmentResult[]
+  resetTokens        PasswordResetToken[]
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+}
+
+model ParticipantGroup {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AssessmentResult {
+  id               String   @id
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  participantCode  String
+  mode             String
+  completedAt      DateTime
+  totalQuestions   Int
+  correct          Int
+  accuracy         Int
+  durationSeconds  Int
+  axes             Json
+  answerDetails    Json
+  createdAt        DateTime @default(now())
+
+  @@index([userId, completedAt])
+  @@index([completedAt])
+  @@index([participantCode])
+}
+
+model PasswordResetToken {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  targetType String
+  targetId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+}
