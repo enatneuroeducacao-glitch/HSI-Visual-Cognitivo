@@ -490,7 +490,6 @@ function App() {
   const [resetMessage, setResetMessage] = useState('');
   const [participantCode, setParticipantCode] = useState('');
   const [mode, setMode] = useState('full');
-  const [selectedAxis, setSelectedAxis] = useState('logic');
   const [runQuestions, setRunQuestions] = useState<Question[]>([]);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
@@ -560,7 +559,6 @@ function App() {
   const progress = runQuestions.length
     ? ((index + 1) / runQuestions.length) * 100
     : 0;
-  const answeredCount = answers.length;
   const consolidatedReport = useMemo(() => {
     const latestByAxis = new Map<string, { result: SavedResult; axis: SavedResult['axes'][number] }>();
     const ordered = [...results].sort((a, b) => b.completedAt.localeCompare(a.completedAt));
@@ -596,7 +594,7 @@ function App() {
     const correct = axisResults.reduce((sum, axis) => sum + axis.correct, 0);
     const totalQuestions = axisResults.reduce((sum, axis) => sum + axis.total, 0);
     const durationSeconds = axisResults.reduce((sum, axis) => sum + axis.averageSeconds * axis.total, 0);
-    const latestDate = consolidatedReport.rows.map(row => row.result.completedAt).sort().at(-1) || new Date().toISOString();
+    const latestDate = consolidatedReport.rows.map(row => row.result.completedAt).sort().slice(-1)[0] || new Date().toISOString();
     const participant = consolidatedReport.rows[0].result.participantCode;
     const aggregate: SavedResult = {
       id: 'consolidated-' + participant,
