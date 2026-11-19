@@ -159,6 +159,9 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
     seen.add(questionId);
     return { questionId, axisId: question.axis, selected, correct: selected === question.answer, seconds, prompt: question.prompt, selectedOption: question.options[selected], correctOption: question.options[question.answer] };
   });
+  if (d.mode === 'Avaliação completa' && verified.length !== questions.length) return res.status(400).json({error:'A avaliação completa deve conter os 30 exercícios.'});
+  if (d.mode === 'Eixo individual' && (verified.length !== 5 || new Set(verified.map(a => a.axisId)).size !== 1)) return res.status(400).json({error:'A avaliação individual deve conter os cinco exercícios de um único eixo.'});
+  if (!['Avaliação completa','Eixo individual'].includes(d.mode)) return res.status(400).json({error:'Modalidade de avaliação inválida.'});
   const correct = verified.filter(a => a.correct).length;
   const accuracy = Math.round(correct / verified.length * 100);
   if (correct !== d.correct || accuracy !== d.accuracy) return res.status(400).json({error:'Pontuação enviada não corresponde às respostas registradas.'});
