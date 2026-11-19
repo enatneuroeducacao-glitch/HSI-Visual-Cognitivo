@@ -2,7 +2,7 @@ name: Build and deploy HSI Visual Cognitivo to GitHub Pages
 
 on:
   push:
-    branches: ["main", "feature/operational-platform"]
+    branches: ["main", "fix/**"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
@@ -33,6 +33,14 @@ jobs:
       - name: Install API dependencies and generate Prisma client
         working-directory: backend
         run: npm install && npx prisma generate
+      - name: Audit production API dependencies
+        id: audit
+        continue-on-error: true
+        working-directory: backend
+        run: npm audit --omit=dev --audit-level=high
+      - name: Report dependency audit status
+        if: steps.audit.outcome == 'failure'
+        run: echo "::warning::Auditoria encontrou vulnerabilidades altas nas dependências de produção; acompanhar correção antes de homologar."
       - name: Build API
         working-directory: backend
         run: npm run build
