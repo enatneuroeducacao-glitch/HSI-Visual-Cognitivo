@@ -1,0 +1,47 @@
+const API_URL = (import.meta as any).env.VITE_API_URL || '';
+let token: string | null = sessionStorage.getItem('hsi_access_token');
+
+export function setToken(value: string | null) {
+  token = value;
+  if (value) sessionStorage.setItem('hsi_access_token', value);
+  else sessionStorage.removeItem('hsi_access_token');
+}
+
+async function request(path: string, options: RequestInit = {}) {
+  const response = await fetch(API_URL + path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      ...(options.headers || {})
+    }
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.error || 'Falha na comunicação com a plataforma.') as Error & { response?: { data: any } };
+    error.response = { data };
+    throw error;
+  }
+  return { data };
+}
+
+export const api = {
+  get: (path: string) => request(path),
+  post: (path: string, body?: unknown) => request(path, { method: 'POST', body: JSON.stringify(body ?? {}) }),
+  patch: (path: string, body?: unknown) => request(path, { method: 'PATCH', body: JSON.stringify(body ?? {}) })
+};
+
+export const auth = {
+  async getUser() {
+    if (!token) return null;
+    try { return (await api.get('/api/auth/me')).data.user; }
+    catch { setToken(null); return null; }
+  },
+  async signInWithPassword(email: string, password: string) {
+    const response = await api.post('/api/auth/login', { email, password });
+    setToken(response.data.token);
+    return response.data.user;
+  },
+  async signOut() { setToken(null); },
+  async requestPasswordReset(email: string) { return api.post('/api/auth/forgot-password', { email }); }
+};

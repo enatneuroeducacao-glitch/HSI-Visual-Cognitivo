@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { auth, api } from '@appdeploy/client';
+import { auth, api } from './lib/api';
+import AdminPanel from './AdminPanel';
 
 type Axis = {
   id: string;
@@ -484,9 +485,11 @@ function App() {
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
   const [participantCode, setParticipantCode] = useState('');
   const [mode, setMode] = useState('full');
-  const [selectedAxis, setSelectedAxis] = useState('logic');
   const [runQuestions, setRunQuestions] = useState<Question[]>([]);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
@@ -556,7 +559,6 @@ function App() {
   const progress = runQuestions.length
     ? ((index + 1) / runQuestions.length) * 100
     : 0;
-  const answeredCount = answers.length;
   const consolidatedReport = useMemo(() => {
     const latestByAxis = new Map<string, { result: SavedResult; axis: SavedResult['axes'][number] }>();
     const ordered = [...results].sort((a, b) => b.completedAt.localeCompare(a.completedAt));
@@ -592,7 +594,7 @@ function App() {
     const correct = axisResults.reduce((sum, axis) => sum + axis.correct, 0);
     const totalQuestions = axisResults.reduce((sum, axis) => sum + axis.total, 0);
     const durationSeconds = axisResults.reduce((sum, axis) => sum + axis.averageSeconds * axis.total, 0);
-    const latestDate = consolidatedReport.rows.map(row => row.result.completedAt).sort().at(-1) || new Date().toISOString();
+    const latestDate = consolidatedReport.rows.map(row => row.result.completedAt).sort().slice(-1)[0] || new Date().toISOString();
     const participant = consolidatedReport.rows[0].result.participantCode;
     const aggregate: SavedResult = {
       id: 'consolidated-' + participant,
@@ -864,20 +866,33 @@ function App() {
             habilidades cognitivas relacionadas à condução.
           </p>
           {authError && <div className="notice error">{authError}</div>}
-          <button
-            className="primary full"
-            onClick={() =>
-              auth
-                .signInWithRedirect()
-                .catch(() =>
-                  setAuthError(
-                    'Não foi possível iniciar o acesso. Verifique o navegador e tente novamente.'
-                  )
-                )
+          <form className="login-form" onSubmit={async e => {
+            e.preventDefault();
+            setAuthError('');
+            setResetMessage('');
+            try {
+              await auth.signInWithPassword(loginEmail, loginPassword);
+              setUser(await auth.getUser());
+            } catch (error: any) {
+              setAuthError(error?.response?.data?.error || 'Não foi possível autenticar. Confira suas credenciais.');
             }
-          >
-            Entrar na plataforma
-          </button>
+          }}>
+            <label htmlFor="login-email">E-mail</label>
+            <input id="login-email" type="email" required autoComplete="username" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="seu@email.com" />
+            <label htmlFor="login-password">Senha</label>
+            <input id="login-password" type="password" required autoComplete="current-password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Sua senha" />
+            <button className="primary full" type="submit">Entrar na plataforma</button>
+          </form>
+          <button className="forgot-link" onClick={async () => {
+            const email = loginEmail.trim();
+            if (!email) { setAuthError('Informe seu e-mail para solicitar a redefinição.'); return; }
+            try {
+              const response = await auth.requestPasswordReset(email);
+              setResetMessage(response.data.message);
+              setAuthError('');
+            } catch { setAuthError('Não foi possível solicitar a redefinição.'); }
+          }}>Esqueci minha senha</button>
+          {resetMessage && <div className="notice success">{resetMessage}</div>}
           <p className="legal-note">
             Os resultados são indicadores experimentais de desempenho. Não
             constituem diagnóstico psicológico, avaliação de aptidão ou
@@ -915,6 +930,11 @@ function App() {
         >
           ◷ <span>Histórico</span>
         </button>
+        {(user.role === 'ADMIN' || user.role === 'ANALYST') && (
+          <button className={view === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => setView('admin')}>
+            ◫ <span>{user.role === 'ADMIN' ? 'Administração' : 'Análises coletivas'}</span>
+          </button>
+        )}
         <div className="side-bottom">
           <div className="user-chip">
             <div className="avatar">
@@ -944,13 +964,17 @@ function App() {
                     ? 'Sessão em andamento'
                     : view === 'report'
                       ? 'Relatório individual'
-                      : 'Resultado da sessão'}
+                      : view === 'admin'
+                        ? 'Gestão e inteligência'
+                        : 'Resultado da sessão'}
             </h2>
           </div>
           <div className="top-meta">
             <span className="status-dot" /> Ambiente experimental
           </div>
         </header>
+
+        {view === 'admin' && (user.role === 'ADMIN' || user.role === 'ANALYST') && <AdminPanel role={user.role} />}
 
         {view === 'home' && (
           <section className="content">
