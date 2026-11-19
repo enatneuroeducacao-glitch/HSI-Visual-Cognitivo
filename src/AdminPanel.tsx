@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
 import { api } from './lib/api';
 
 type Props = { role: 'ADMIN' | 'ANALYST' | 'PARTICIPANT' };
@@ -33,7 +34,7 @@ export default function AdminPanel({role}:Props) {
   finally{setLoading(false);}
  };
  useEffect(()=>{void load();},[]);
- const createPerson=async(e:React.FormEvent)=>{
+ const createPerson=async(e:FormEvent)=>{
   e.preventDefault();setError('');setNotice('');
   try{
    const r=await api.post('/api/users',{name,email,password:password||undefined,participantCode:code||undefined,role:'PARTICIPANT'});
