@@ -1,0 +1,35 @@
+[
+  {
+    "name": "Acesso, avaliação completa e histórico",
+    "sanity": true,
+    "viewport": "desktop",
+    "covers": ["autenticação", "avaliação completa", "persistência", "histórico"],
+    "description": "Verifica o fluxo principal após migração da autenticação e persistência.",
+    "steps": ["Entrar", "Iniciar avaliação completa", "Responder aos 30 exercícios", "Concluir", "Abrir o histórico", "Recarregar a página"],
+    "expected": "Resultado salvo no banco independente e recuperado no histórico após recarregar."
+  },
+  {
+    "name": "Relatório geral e orientação IA independentes",
+    "viewport": "desktop",
+    "covers": ["orientação IA", "relatório PDF", "dois documentos"],
+    "description": "Garante que os comandos de orientação e relatório abram documentos distintos.",
+    "steps": ["Abrir histórico", "Gerar orientação personalizada", "Voltar ao histórico", "Gerar relatório geral para impressão"],
+    "expected": "A orientação gera documento próprio e o relatório PDF exibe somente os resultados consolidados."
+  },
+  {
+    "name": "Sessão individual por eixo",
+    "viewport": "desktop",
+    "covers": ["seis eixos", "sessão por eixo", "registro"],
+    "description": "Verifica execução de somente um eixo.",
+    "steps": ["Iniciar Atenção seletiva", "Responder às cinco questões", "Concluir", "Consultar histórico"],
+    "expected": "Somente o eixo selecionado aparece como avaliado."
+  },
+  {
+    "name": "Acesso não autenticado",
+    "viewport": "mobile",
+    "covers": ["autenticação", "proteção de registros"],
+    "description": "Verifica acesso restrito aos registros.",
+    "steps": ["Abrir aplicação sem sessão", "Tentar abrir histórico"],
+    "expected": "O usuário deve autenticar-se antes de acessar resultados."
+  }
+]
