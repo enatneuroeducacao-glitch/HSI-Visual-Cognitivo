@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { auth } from './lib/api';
 
 export default function ResetPassword() {
  const token=new URLSearchParams(window.location.search).get('token')||'';
