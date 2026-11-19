@@ -201,4 +201,5 @@ app.use((err: unknown,_req:Request,res:Response,_next:NextFunction) => {
   if (err && typeof err === 'object' && 'code' in err && err.code === 'P2002') return res.status(409).json({error:'Já existe um registro com esses dados.'});
   return res.status(500).json({error:'Erro interno. Consulte os registros do serviço.'});
 });
-app.listen(PORT,'0.0.0.0',()=>console.log('HSI API listening on',PORT));
+export { app };
+if (process.env.NODE_ENV !== 'test') app.listen(PORT,'0.0.0.0',()=>console.log('HSI API listening on',PORT));
