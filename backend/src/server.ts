@@ -167,11 +167,13 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
   if (correct !== d.correct || accuracy !== d.accuracy) return res.status(400).json({error:'Pontuação enviada não corresponde às respostas registradas.'});
   const axes = [...new Set(verified.map(a => a.axisId))].map(axisId => {
     const rows = verified.filter(a => a.axisId === axisId);
-    const axisQuestion = questions.find((q: any) => q.axis === axisId) as any;
+    const axisTitles: Record<string,string> = { logic:'Raciocínio lógico', attention:'Atenção seletiva', patterns:'Percepção de padrões', anticipation:'Antecipação de situações', risk:'Percepção de riscos no trânsito', decision:'Tomada de decisão' };
     const axisCorrect = rows.filter(a => a.correct).length;
-    return { axisId, title: axisQuestion.axis, correct: axisCorrect, total: rows.length, accuracy: Math.round(axisCorrect / rows.length * 100), averageSeconds: Math.round(rows.reduce((sum,a) => sum + a.seconds, 0) / rows.length) };
+    return { axisId, title: axisTitles[axisId] || axisId, correct: axisCorrect, total: rows.length, accuracy: Math.round(axisCorrect / rows.length * 100), averageSeconds: Math.round(rows.reduce((sum,a) => sum + a.seconds, 0) / rows.length) };
   });
-  const result=await prisma.assessmentResult.upsert({where:{id:d.id},create:{id:d.id,userId:req.authUser!.id,participantCode:req.authUser!.participantCode || 'SEM-CÓDIGO',mode:d.mode,completedAt:new Date(d.completedAt),totalQuestions:verified.length,correct,accuracy,durationSeconds:d.durationSeconds,axes:axes as Prisma.InputJsonValue,answerDetails:verified as Prisma.InputJsonValue},update:{}});
+  const existing = await prisma.assessmentResult.findUnique({where:{id:d.id}});
+  if (existing && existing.userId !== req.authUser!.id) return res.status(409).json({error:'Identificador de resultado já utilizado.'});
+  const result = existing || await prisma.assessmentResult.create({data:{id:d.id,userId:req.authUser!.id,participantCode:req.authUser!.participantCode || 'SEM-CÓDIGO',mode:d.mode,completedAt:new Date(d.completedAt),totalQuestions:verified.length,correct,accuracy,durationSeconds:d.durationSeconds,axes:axes as Prisma.InputJsonValue,answerDetails:verified as Prisma.InputJsonValue}});
   await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'ASSESSMENT_SUBMIT',targetType:'RESULT',targetId:result.id}});
   res.status(201).json({result});
 }));
