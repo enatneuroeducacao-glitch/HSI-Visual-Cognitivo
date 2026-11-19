@@ -2,7 +2,7 @@ name: Build and deploy HSI Visual Cognitivo to GitHub Pages
 
 on:
   push:
-    branches: ["main", "fix/**"]
+    branches: ["main"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
@@ -13,12 +13,31 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages-${{ github.ref }}"
+  group: "pages-${{ github.head_ref || github.ref }}"
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: hsi_test
+          POSTGRES_PASSWORD: hsi_test_password
+          POSTGRES_DB: hsi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hsi_test -d hsi_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://hsi_test:hsi_test_password@localhost:5432/hsi_test?schema=public
+      JWT_SECRET: "hsi-test-secret-at-least-32-characters-long-2026"
+      NODE_ENV: test
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,24 +45,44 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install frontend dependencies
-        run: npm install
+      - name: Resolve frontend lockfile and install
+        run: npm install --package-lock-only --ignore-scripts --no-audit && npm ci
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
       - name: Build frontend
         run: npm run build
-      - name: Install API dependencies and generate Prisma client
+      - name: Resolve API lockfile and install
         working-directory: backend
-        run: npm install && npx prisma generate
-      - name: Audit production API dependencies
-        id: audit
+        run: npm install --package-lock-only --ignore-scripts --no-audit && npm ci
+      - name: Audit API dependencies
+        id: api_audit
         continue-on-error: true
         working-directory: backend
-        run: npm audit --omit=dev --audit-level=high
-      - name: Report dependency audit status
-        if: steps.audit.outcome == 'failure'
-        run: echo "::warning::Auditoria encontrou vulnerabilidades altas nas dependências de produção; acompanhar correção antes de homologar."
+        run: npm audit --audit-level=high
+      - name: Generate Prisma client
+        working-directory: backend
+        run: npx prisma generate
+      - name: Apply database migrations
+        working-directory: backend
+        run: npx prisma migrate deploy
+      - name: Run unit and API security tests
+        working-directory: backend
+        run: npm test
       - name: Build API
         working-directory: backend
         run: npm run build
+      - name: Enforce API dependency audit
+        if: always() && steps.api_audit.outcome == 'failure'
+        run: exit 1
+      - name: Upload generated lockfiles for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hsi-npm-lockfiles
+          path: |
+            package-lock.json
+            backend/package-lock.json
+          if-no-files-found: warn
       - name: Configure Pages
         if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5
@@ -54,7 +93,7 @@ jobs:
           path: ./dist
   deploy:
     if: github.ref == 'refs/heads/main'
-    needs: build
+    needs: build-and-test
     runs-on: ubuntu-latest
     environment:
       name: github-pages
