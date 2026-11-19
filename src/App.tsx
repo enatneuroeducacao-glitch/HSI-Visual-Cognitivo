@@ -728,7 +728,6 @@ function App() {
       : shuffle(questions);
     setRunQuestions(chosen);
     setMode(axisId ? 'axis' : 'full');
-    setSelectedAxis(axisId || 'logic');
     setIndex(0);
     setSelected(null);
     setAnswers([]);
