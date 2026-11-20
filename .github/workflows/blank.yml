@@ -36,6 +36,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      VITE_BASE_PATH: /HSI-Visual-Cognitivo/
       DATABASE_URL: postgresql://hsi_test:hsi_test_password@localhost:5432/hsi_test?schema=public
       JWT_SECRET: "hsi-test-secret-at-least-32-characters-long-2026"
       NODE_ENV: test
