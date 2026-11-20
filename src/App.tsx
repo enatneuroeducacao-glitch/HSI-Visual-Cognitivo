@@ -631,6 +631,7 @@ function App() {
 
         {view === 'test' && current && (
           <section className="test-content">
+            {saveError && <div className="notice error">{saveError}</div>}
             <div className="test-toolbar">
               <button className="back-link" onClick={() => setView('home')}>
                 ← Sair da sessão
