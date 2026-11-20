@@ -813,13 +813,13 @@ function App() {
                 <div className="pdf-identification"><div><small>PARTICIPANTE</small><strong>{selectedReport.participantCode}</strong></div><div><small>DATA</small><strong>{new Date(selectedReport.completedAt).toLocaleString('pt-BR')}</strong></div><div><small>SESSÃO</small><strong>{selectedReport.mode}</strong></div></div>
                 <h2>Resultado</h2><p>{perfectOpinion(selectedReport)}</p>
                 <div className="pdf-notice">Os resultados do HSI Visual Cognitivo são experimentais e não representam o índice HSI, não substituem o HSI-DOTH-P e não permitem classificar aptidão para dirigir.</div>
-                <h2>Orientador ENAT com inteligência artificial</h2>
+                <h2>Orientador ENAT</h2>
                 <div className="advisor-panel no-print">
                   <p>Mesmo com 100% de acertos, você pode solicitar uma explicação dos resultados e exercícios para ampliar a variedade e a complexidade das tarefas.</p>
                   <button className="primary" onClick={generateAdvisor} disabled={advisorLoading}>{advisorLoading ? 'Preparando orientação…' : 'Gerar orientação e exercícios personalizados'}</button>
                   {advisorError && <p className="advisor-error">{advisorError}</p>}
                 </div>
-                {advisorText && <section className="advisor-output"><h3>Orientação personalizada</h3>{renderAdvisorText(advisorText)}<p className="advisor-disclaimer">Conteúdo educativo gerado por IA a partir dos registros disponíveis. Não constitui avaliação clínica ou de aptidão para dirigir.</p></section>}
+                {advisorText && <section className="advisor-output"><h3>Orientação personalizada</h3>{renderAdvisorText(advisorText)}<p className="advisor-disclaimer">Conteúdo educativo gerado automaticamente a partir dos registros disponíveis. Não constitui avaliação clínica ou de aptidão para dirigir.</p></section>}
               </article>
             ) : (
             <article className="pdf-report">
@@ -863,7 +863,7 @@ function App() {
                   {observations.available && <p><strong>Limite interpretativo:</strong> as observações descrevem apenas o comportamento de resposta nesta tarefa. Não identificam traços de personalidade, impulsividade, ansiedade, déficit de atenção ou qualquer condição clínica.</p>}
                 </>;
               })()}
-              <h2>4. Orientador ENAT com inteligência artificial</h2>
+              <h2>4. Orientador ENAT</h2>
               <div className="advisor-panel no-print">
                 <p>Gere uma explicação individual dos resultados e um conjunto de exercícios novos, escolhidos conforme os dados desta avaliação.</p>
                 <button className="primary" onClick={generateAdvisor} disabled={advisorLoading}>
@@ -874,7 +874,7 @@ function App() {
               {advisorText && <section className="advisor-output">
                 <h3>Orientação personalizada</h3>
                 {renderAdvisorText(advisorText)}
-                <p className="advisor-disclaimer">Conteúdo educativo gerado por IA a partir dos registros disponíveis. Revise as orientações antes de utilizá-las em contexto de formação.</p>
+                <p className="advisor-disclaimer">Conteúdo educativo gerado automaticamente a partir dos registros disponíveis. Revise as orientações antes de utilizá-las em contexto de formação.</p>
               </section>}
               <h2>5. Recomendações gerais</h2>
               <ul>
@@ -932,7 +932,7 @@ function App() {
                 <div className="report-method">
                   <strong>Importante:</strong> este panorama resume desempenho e tempo nos exercícios. Não é um escore HSI, não substitui o HSI-DOTH-P e não classifica aptidão para dirigir. A conversão em índice exige modelo de pontuação, estudos de validade e confiabilidade.
                 </div>
-                <div className="history-document-actions"><button className="secondary" onClick={openConsolidatedAdvisor}>✦ Gerar orientação personalizada com IA</button><button className="primary" onClick={openConsolidatedReport}>▤ {consolidatedReport.accuracy === 100 ? 'Gerar parecer geral para impressão' : 'Gerar relatório geral para impressão'}</button></div>
+                <div className="history-document-actions"><button className="secondary" onClick={openConsolidatedAdvisor}>✦ Gerar orientação educativa</button><button className="primary" onClick={openConsolidatedReport}>▤ {consolidatedReport.accuracy === 100 ? 'Gerar parecer geral para impressão' : 'Gerar relatório geral para impressão'}</button></div>
               </div>
             )}
             {results.length === 0 ? (
