@@ -9,8 +9,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: "pages-${{ github.head_ref || github.ref }}"
@@ -19,9 +17,10 @@ concurrency:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     permissions:
-      contents: write
+      contents: read
+      pages: read
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16-alpine
@@ -43,33 +42,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref }}
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Resolve frontend lockfile and install
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install --package-lock-only --ignore-scripts --no-audit
-            npm ci
-          fi
+      - name: Install frontend dependencies from lockfile
+        run: npm ci
       - name: Audit frontend dependencies
         run: npm audit --audit-level=high
       - name: Build frontend
         run: npm run build
-      - name: Resolve API lockfile and install
+      - name: Install API dependencies from lockfile
         working-directory: backend
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install --package-lock-only --ignore-scripts --no-audit
-            npm ci
-          fi
+        run: npm ci
       - name: Audit API dependencies
         id: api_audit
         continue-on-error: true
@@ -90,25 +75,6 @@ jobs:
       - name: Enforce API dependency audit
         if: always() && steps.api_audit.outcome == 'failure'
         run: exit 1
-      - name: Commit generated lockfiles to the PR branch
-        if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json backend/package-lock.json
-          if ! git diff --cached --quiet; then
-            git commit -m "build: version reproducible npm lockfiles"
-            git push origin "HEAD:${{ github.head_ref }}"
-          fi
-      - name: Upload generated lockfiles for review
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: hsi-npm-lockfiles
-          path: |
-            package-lock.json
-            backend/package-lock.json
-          if-no-files-found: warn
       - name: Configure Pages
         if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5
@@ -121,6 +87,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
     needs: build-and-test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
