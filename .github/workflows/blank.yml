@@ -9,8 +9,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: "pages-${{ github.head_ref || github.ref }}"
@@ -19,6 +17,9 @@ concurrency:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
     timeout-minutes: 20
     services:
       postgres:
@@ -74,15 +75,6 @@ jobs:
       - name: Enforce API dependency audit
         if: always() && steps.api_audit.outcome == 'failure'
         run: exit 1
-      - name: Upload generated lockfiles for review
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: hsi-npm-lockfiles
-          path: |
-            package-lock.json
-            backend/package-lock.json
-          if-no-files-found: warn
       - name: Configure Pages
         if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5
@@ -95,6 +87,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
     needs: build-and-test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
