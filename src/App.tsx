@@ -374,8 +374,8 @@ function App() {
       await loadResults();
       setView('result');
     } catch (error: any) {
-      setSaveError(error?.response?.data?.error || 'Não foi possível validar e salvar o resultado. Reinicie a sessão para tentar novamente.');
-      setView('result');
+      setSaveError(error?.response?.data?.error || 'Não foi possível validar e salvar o resultado. Nenhum resultado foi registrado. Saia da sessão e inicie uma nova avaliação para tentar novamente.');
+      setView('test');
     } finally {
       setSaving(false);
     }
