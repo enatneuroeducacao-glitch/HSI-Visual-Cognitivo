@@ -65,13 +65,9 @@ test('participante não acessa administração, usuários ou analytics', async (
   assert.equal((await request(app).post('/api/groups').set('Authorization', 'Bearer ' + token).send({ name: 'Grupo indevido' })).status, 403);
 });
 
-test('analista consulta somente participantes, sem receber contas administrativas', async () => {
+test('analista não recebe dados cadastrais pessoais pela rota de usuários', async () => {
   const response = await request(app).get('/api/users').set('Authorization', 'Bearer ' + tokenFor(ids.analyst));
-  assert.equal(response.status, 200);
-  const returned = response.body.users.map((u: { email: string }) => u.email);
-  assert.ok(returned.includes(emails.participant));
-  assert.ok(!returned.includes(emails.admin));
-  assert.ok(!returned.includes(emails.analyst));
+  assert.equal(response.status, 403);
 });
 
 test('participante consulta exclusivamente os próprios resultados', async () => {
@@ -91,25 +87,21 @@ test('API recalcula pontuação, valida modalidade e ignora código de participa
   const answers = questions.map((q: any) => ({ questionId: q.id, axisId: q.axis, selected: q.answer, seconds: 12 }));
   const payload = {
     id: suffix + '-verified-result',
-    participantCode: 'CODE-SPOOFED-BY-CLIENT',
     mode: 'Avaliação completa',
     completedAt: new Date().toISOString(),
     totalQuestions: answers.length,
-    correct: answers.length,
-    accuracy: 100,
     durationSeconds: answers.length * 12,
-    axes: [],
     answerDetails: answers,
   };
   const valid = await request(app).post('/api/results').set('Authorization', 'Bearer ' + token).send(payload);
   assert.equal(valid.status, 201);
   assert.equal(valid.body.result.participantCode, suffix + '-code');
+  assert.equal(valid.body.result.accuracy, 100);
 
   const tampered = await request(app).post('/api/results').set('Authorization', 'Bearer ' + token).send({
     ...payload,
     id: suffix + '-tampered-result',
-    correct: 29,
-    accuracy: 97,
+    answerDetails: [{ ...answers[0], selected: 99 }, ...answers.slice(1)],
   });
   assert.equal(tampered.status, 400);
 
@@ -117,10 +109,32 @@ test('API recalcula pontuação, valida modalidade e ignora código de participa
     ...payload,
     id: suffix + '-incomplete-result',
     totalQuestions: 5,
-    correct: 5,
-    accuracy: 100,
     durationSeconds: 60,
     answerDetails: answers.slice(0, 5),
   });
   assert.equal(incomplete.status, 400);
+});
+
+test('token assinado com emissor diferente é recusado', async () => {
+  const wrongIssuer = jwt.sign({}, secret, { subject: ids.participant, expiresIn: '10m', issuer: 'outro-servico' });
+  const response = await request(app).get('/api/auth/me').set('Authorization', 'Bearer ' + wrongIssuer);
+  assert.equal(response.status, 401);
+});
+
+test('API não entrega gabarito nem explicações no endpoint de questões', async () => {
+  const response = await request(app).get('/api/questions?mode=full').set('Authorization', 'Bearer ' + tokenFor(ids.participant));
+  assert.equal(response.status, 200);
+  assert.equal(response.body.questions.length, 30);
+  for (const question of response.body.questions) {
+    assert.equal('answer' in question, false);
+    assert.equal('explanation' in question, false);
+  }
+});
+
+test('resultado não pode ser reenviado com o mesmo identificador', async () => {
+  const { questions } = await import('../src/question-bank.js');
+  const answers = questions.map((q: any) => ({ questionId: q.id, axisId: q.axis, selected: q.answer, seconds: 10 }));
+  const payload = { id: suffix + '-duplicate', mode: 'Avaliação completa', completedAt: new Date().toISOString(), totalQuestions: 30, durationSeconds: 300, answerDetails: answers };
+  assert.equal((await request(app).post('/api/results').set('Authorization', 'Bearer ' + tokenFor(ids.participant)).send(payload)).status, 201);
+  assert.equal((await request(app).post('/api/results').set('Authorization', 'Bearer ' + tokenFor(ids.participant)).send(payload)).status, 409);
 });
