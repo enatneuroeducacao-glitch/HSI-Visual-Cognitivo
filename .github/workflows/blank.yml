@@ -20,6 +20,8 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: write
     services:
       postgres:
         image: postgres:16-alpine
@@ -41,19 +43,33 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Resolve frontend lockfile and install
-        run: npm install --package-lock-only --ignore-scripts --no-audit && npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --package-lock-only --ignore-scripts --no-audit
+            npm ci
+          fi
       - name: Audit frontend dependencies
         run: npm audit --audit-level=high
       - name: Build frontend
         run: npm run build
       - name: Resolve API lockfile and install
         working-directory: backend
-        run: npm install --package-lock-only --ignore-scripts --no-audit && npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --package-lock-only --ignore-scripts --no-audit
+            npm ci
+          fi
       - name: Audit API dependencies
         id: api_audit
         continue-on-error: true
@@ -74,6 +90,16 @@ jobs:
       - name: Enforce API dependency audit
         if: always() && steps.api_audit.outcome == 'failure'
         run: exit 1
+      - name: Commit generated lockfiles to the PR branch
+        if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json backend/package-lock.json
+          if ! git diff --cached --quiet; then
+            git commit -m "build: version reproducible npm lockfiles"
+            git push origin "HEAD:${{ github.head_ref }}"
+          fi
       - name: Upload generated lockfiles for review
         if: always()
         uses: actions/upload-artifact@v4
