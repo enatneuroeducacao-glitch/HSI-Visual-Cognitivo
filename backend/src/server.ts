@@ -39,7 +39,7 @@ const authenticate = asyncRoute(async (req, res, next) => {
   const raw = req.headers.authorization?.replace(/^Bearer\s+/i, '');
   if (!raw) return res.status(401).json({ error: 'Autenticação necessária.' });
   try {
-    const payload = jwt.verify(raw, JWT_SECRET!) as { sub: string };
+    const payload = jwt.verify(raw, JWT_SECRET!, { issuer: 'hsi-visual-cognitivo', algorithms: ['HS256'] }) as { sub: string };
     const user = await prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user || user.status !== UserStatus.ACTIVE) return res.status(401).json({ error: 'Sessão inválida ou usuário inativo.' });
     req.authUser = user as AuthUser;
@@ -102,7 +102,7 @@ app.post('/api/auth/reset-password', asyncRoute(async (req, res) => {
 }));
 
 const participantSchema = z.object({ name: z.string().trim().min(2).max(120), email: z.string().email().max(254), password: z.string().min(12).max(200).optional(), role: z.enum(['PARTICIPANT','ANALYST']).default('PARTICIPANT'), participantCode: z.string().trim().max(60).optional(), groupId: z.string().optional() });
-app.get('/api/users', authenticate, allow(UserRole.ADMIN, UserRole.ANALYST), asyncRoute(async (req, res) => {
+app.get('/api/users', authenticate, allow(UserRole.ADMIN), asyncRoute(async (req, res) => {
   const users = await prisma.user.findMany({ where: req.authUser!.role === UserRole.ANALYST ? { role: UserRole.PARTICIPANT } : {}, select: { id:true,name:true,email:true,role:true,status:true,participantCode:true,groupId:true,createdAt:true,group:{select:{id:true,name:true}} }, orderBy: { createdAt:'desc' } });
   res.json({ users });
 }));
@@ -135,11 +135,24 @@ app.post('/api/groups', authenticate, allow(UserRole.ADMIN), asyncRoute(async (r
   res.status(201).json({group});
 }));
 
+app.get('/api/questions', authenticate, asyncRoute(async (req, res) => {
+  const mode = req.query.mode;
+  const axisId = typeof req.query.axisId === 'string' ? req.query.axisId : undefined;
+  if (mode === 'full') return res.json({ questions: questions.map(({ id, axis, prompt, visual, options }) => ({ id, axis, prompt, visual, options })) });
+  if (mode === 'axis' && axisId && ['logic','attention','patterns','anticipation','risk','decision'].includes(axisId)) {
+    const delivered = questions.filter(q => q.axis === axisId).map(({ id, axis, prompt, visual, options }) => ({ id, axis, prompt, visual, options }));
+    if (delivered.length !== 5) return res.status(500).json({ error: 'Banco de questões inconsistente.' });
+    return res.json({ questions: delivered });
+  }
+  return res.status(400).json({ error: 'Modalidade ou eixo inválido.' });
+}));
+
 const resultSchema = z.object({
-  id:z.string().min(8).max(100),participantCode:z.string().max(60),mode:z.string().max(100),completedAt:z.string().datetime(),
-  totalQuestions:z.number().int().min(1).max(30),correct:z.number().int().min(0).max(30),accuracy:z.number().int().min(0).max(100),
-  durationSeconds:z.number().int().min(1).max(86400),axes:z.array(z.record(z.string(), z.unknown())).max(6),answerDetails:z.array(z.record(z.string(), z.unknown())).min(1).max(30)
-});
+  id:z.string().min(8).max(100), mode:z.enum(['Avaliação completa','Eixo individual']),
+  completedAt:z.string().datetime(), totalQuestions:z.number().int().min(1).max(30),
+  durationSeconds:z.number().int().min(1).max(86400),
+  answerDetails:z.array(z.object({ questionId:z.string().min(1).max(40), axisId:z.string().min(1).max(40), selected:z.number().int().min(0).max(3), seconds:z.number().int().min(1).max(3600) }).strict()).min(1).max(30),
+}).strict();
 app.get('/api/results', authenticate, asyncRoute(async (req,res) => {
   const rows=await prisma.assessmentResult.findMany({where:{userId:req.authUser!.id},orderBy:{completedAt:'desc'},take:200});
   res.json({results:rows.map(r=>({...r,completedAt:r.completedAt.toISOString()}))});
@@ -164,7 +177,7 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
   if (modeError) return res.status(400).json({error:modeError});
   const correct = verified.filter(a => a.correct).length;
   const accuracy = Math.round(correct / verified.length * 100);
-  if (correct !== d.correct || accuracy !== d.accuracy) return res.status(400).json({error:'Pontuação enviada não corresponde às respostas registradas.'});
+
   const axes = [...new Set(verified.map(a => a.axisId))].map(axisId => {
     const rows = verified.filter(a => a.axisId === axisId);
     const axisTitles: Record<string,string> = { logic:'Raciocínio lógico', attention:'Atenção seletiva', patterns:'Percepção de padrões', anticipation:'Antecipação de situações', risk:'Percepção de riscos no trânsito', decision:'Tomada de decisão' };
@@ -172,8 +185,8 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
     return { axisId, title: axisTitles[axisId] || axisId, correct: axisCorrect, total: rows.length, accuracy: Math.round(axisCorrect / rows.length * 100), averageSeconds: Math.round(rows.reduce((sum,a) => sum + a.seconds, 0) / rows.length) };
   });
   const existing = await prisma.assessmentResult.findUnique({where:{id:d.id}});
-  if (existing && existing.userId !== req.authUser!.id) return res.status(409).json({error:'Identificador de resultado já utilizado.'});
-  const result = existing || await prisma.assessmentResult.create({data:{id:d.id,userId:req.authUser!.id,participantCode:req.authUser!.participantCode || 'SEM-CÓDIGO',mode:d.mode,completedAt:new Date(d.completedAt),totalQuestions:verified.length,correct,accuracy,durationSeconds:d.durationSeconds,axes:axes as Prisma.InputJsonValue,answerDetails:verified as Prisma.InputJsonValue}});
+  if (existing) return res.status(409).json({error:'Identificador de resultado já utilizado.'});
+  const result = await prisma.assessmentResult.create({data:{id:d.id,userId:req.authUser!.id,participantCode:req.authUser!.participantCode || 'SEM-CÓDIGO',mode:d.mode,completedAt:new Date(d.completedAt),totalQuestions:verified.length,correct,accuracy,durationSeconds:d.durationSeconds,axes:axes as Prisma.InputJsonValue,answerDetails:verified as Prisma.InputJsonValue}});
   await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'ASSESSMENT_SUBMIT',targetType:'RESULT',targetId:result.id}});
   res.status(201).json({result});
 }));
@@ -192,7 +205,25 @@ app.get('/api/analytics', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), 
     const id=String(raw.axisId || 'unknown'), current=axesMap.get(id) || {title:String(raw.title || id),correct:0,total:0,seconds:0,attempts:0};
     current.correct+=Number(raw.correct || 0);current.total+=Number(raw.total || 0);current.seconds+=Number(raw.averageSeconds || 0);current.attempts++;axesMap.set(id,current);
   }
-  res.json({summary:{assessments:count,participants,totalQuestions,correct,accuracy:totalQuestions?Math.round(correct/totalQuestions*100):0},axes:[...axesMap.entries()].map(([axisId,v])=>({axisId,title:v.title,correct:v.correct,total:v.total,accuracy:v.total?Math.round(v.correct/v.total*100):0,averageSeconds:v.attempts?Math.round(v.seconds/v.attempts):0})),results:rows.map(r=>({id:r.id,participant:r.user.name,participantCode:r.user.participantCode,group:r.user.group?.name || 'Sem grupo',completedAt:r.completedAt.toISOString(),mode:r.mode,accuracy:r.accuracy,totalQuestions:r.totalQuestions,correct:r.correct}))});
+  res.json({summary:{assessments:count,participants,totalQuestions,correct,accuracy:totalQuestions?Math.round(correct/totalQuestions*100):0},axes:[...axesMap.entries()].map(([axisId,v])=>({axisId,title:v.title,correct:v.correct,total:v.total,accuracy:v.total?Math.round(v.correct/v.total*100):0,averageSeconds:v.attempts?Math.round(v.seconds/v.attempts):0})),results:rows.map((r,index)=>({id:r.id,participant:req.authUser!.role === UserRole.ADMIN ? r.user.name : 'Participante ' + (index + 1),participantCode:req.authUser!.role === UserRole.ADMIN ? r.user.participantCode : null,group:r.user.group?.name || 'Sem grupo',completedAt:r.completedAt.toISOString(),mode:r.mode,accuracy:r.accuracy,totalQuestions:r.totalQuestions,correct:r.correct}))});
+}));
+
+app.post('/api/advisor', authenticate, asyncRoute(async (req, res) => {
+  const parsed = z.object({ resultIds: z.array(z.string().min(8).max(100)).min(1).max(6) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Informe resultados válidos para orientação.' });
+  const rows = await prisma.assessmentResult.findMany({ where: { id: { in: parsed.data.resultIds }, userId: req.authUser!.id }, orderBy: { completedAt: 'desc' } });
+  if (rows.length !== new Set(parsed.data.resultIds).size) return res.status(404).json({ error: 'Um ou mais resultados não foram encontrados nesta conta.' });
+  const axisMap = new Map<string, { title: string; correct: number; total: number }>();
+  for (const row of rows) for (const item of row.axes as Array<{axisId:string;title:string;correct:number;total:number}>) {
+    const current = axisMap.get(item.axisId) || { title: item.title, correct: 0, total: 0 };
+    current.correct += item.correct; current.total += item.total; axisMap.set(item.axisId, current);
+  }
+  const guidance = [...axisMap.values()].map(item => {
+    const pct = item.total ? Math.round(item.correct / item.total * 100) : 0;
+    const suggestion = pct >= 80 ? 'ampliar a variedade dos exercícios e observar a consistência em novas sessões' : pct >= 60 ? 'retomar os itens com erro e praticar estratégias gradualmente' : 'revisar os conceitos e realizar atividades orientadas em sessões curtas';
+    return item.title + ': ' + item.correct + '/' + item.total + ' acertos (' + pct + '%). Sugestão educativa: ' + suggestion + '.';
+  });
+  res.json({ guidance: 'Orientação educativa automatizada, baseada apenas nos resultados registrados nesta conta. Não constitui avaliação clínica ou de aptidão para dirigir.\\n\\n' + guidance.join('\\n') });
 }));
 
 app.use((err: unknown,_req:Request,res:Response,_next:NextFunction) => {
