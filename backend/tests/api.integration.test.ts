@@ -76,6 +76,14 @@ test('participante consulta exclusivamente os próprios resultados', async () =>
   assert.deepEqual(response.body.results.map((r: { id: string }) => r.id), [suffix + '-result-a']);
 });
 
+test('orientador não permite consultar resultados de outra conta', async () => {
+  const response = await request(app)
+    .post('/api/advisor')
+    .set('Authorization', 'Bearer ' + tokenFor(ids.other))
+    .send({ resultIds: [suffix + '-result-a'] });
+  assert.equal(response.status, 404);
+});
+
 test('recuperação de senha falha explicitamente quando SMTP não está configurado', async () => {
   const response = await request(app).post('/api/auth/forgot-password').send({ email: emails.participant });
   assert.equal(response.status, 503);
