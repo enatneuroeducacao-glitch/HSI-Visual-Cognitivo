@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from './lib/api';
+import ReportsCenter from './ReportsCenter';
 
 type Props = { role: 'ADMIN' | 'ANALYST' | 'PARTICIPANT' };
 type Person = { id:string; name:string; email:string; role:string; status:string; participantCode:string|null; groupId:string|null; group?:{name:string}|null };
@@ -8,7 +9,7 @@ type Group = { id:string; name:string; _count?:{users:number} };
 type Analytics = { summary:{assessments:number;participants:number;totalQuestions:number;correct:number;accuracy:number}; axes:Array<{axisId:string;title:string;correct:number;total:number;accuracy:number;averageSeconds:number}>; results:Array<{id:string;participant:string;participantCode:string|null;group:string;completedAt:string;mode:string;accuracy:number;totalQuestions:number;correct:number}> };
 
 export default function AdminPanel({role}:Props) {
- const [tab,setTab]=useState<'overview'|'participants'|'groups'>('overview');
+ const [tab,setTab]=useState<'overview'|'participants'|'groups'|'reports'>('overview');
  const [from,setFrom]=useState(new Date(Date.now()-30*86400000).toISOString().slice(0,10));
  const [to,setTo]=useState(new Date().toISOString().slice(0,10));
  const [groupId,setGroupId]=useState('');
@@ -59,6 +60,7 @@ export default function AdminPanel({role}:Props) {
    <button className={tab==='overview'?'selected':''} onClick={()=>setTab('overview')}>Visão coletiva</button>
    {role==='ADMIN'&&<button className={tab==='participants'?'selected':''} onClick={()=>setTab('participants')}>Participantes</button>}
    {role==='ADMIN'&&<button className={tab==='groups'?'selected':''} onClick={()=>setTab('groups')}>Grupos</button>}
+   <button className={tab==='reports'?'selected':''} onClick={()=>setTab('reports')}>Relatórios</button>
   </nav>
   {notice&&<div className="notice success">{notice}</div>}{error&&<div className="notice error">{error}</div>}
   {tab==='overview'&&<div className="admin-content">
@@ -68,6 +70,7 @@ export default function AdminPanel({role}:Props) {
    <div className="admin-section"><div className="admin-section-head"><h3>Registros incluídos</h3><span>{analytics.results.length} resultados</span></div><div className="table-scroll"><table><thead><tr><th>Participante</th><th>Grupo</th><th>Data</th><th>Tipo</th><th>Precisão</th></tr></thead><tbody>{analytics.results.map(r=><tr key={r.id}><td>{r.participant}<small>{r.participantCode||'Sem código'}</small></td><td>{r.group}</td><td>{new Date(r.completedAt).toLocaleDateString('pt-BR')}</td><td>{r.mode}</td><td><b>{r.accuracy}%</b></td></tr>)}</tbody></table></div></div></>}
   </div>}
   {tab==='participants'&&role==='ADMIN'&&<div className="admin-content"><div className="admin-section"><h3>Novo participante</h3><form className="participant-form" onSubmit={createPerson}><label>Nome completo<input required value={name} onChange={e=>setName(e.target.value)} placeholder="Nome do participante"/></label><label>E-mail de acesso<input required type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="nome@exemplo.com"/></label><label>Código de identificação<input value={code} onChange={e=>setCode(e.target.value)} placeholder="Opcional"/></label><label>Senha inicial<input type="password" minLength={12} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Deixe vazio para gerar senha temporária"/></label><label>Perfil<select value={roleToCreate} onChange={e=>setRoleToCreate(e.target.value as 'PARTICIPANT'|'ANALYST')}><option value="PARTICIPANT">Participante</option><option value="ANALYST">Analista</option></select></label><label>Grupo<select value={groupToAssign} onChange={e=>setGroupToAssign(e.target.value)}><option value="">Sem grupo</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></label><button className="primary">Cadastrar acesso</button></form></div><div className="admin-section"><h3>Contas cadastradas</h3><div className="table-scroll"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>Ação</th></tr></thead><tbody>{people.map(p=><tr key={p.id}><td>{p.name}</td><td>{p.email}</td><td>{p.role}</td><td>{p.status}</td><td><button className="table-action" onClick={()=>void updateStatus(p)}>{p.status==='ACTIVE'?'Desativar':'Ativar'}</button></td></tr>)}</tbody></table></div></div></div>}
+  {tab==='reports'&&<ReportsCenter/>}
   {tab==='groups'&&role==='ADMIN'&&<div className="admin-content"><div className="admin-section"><h3>Criar grupo de avaliação</h3><form className="group-form" onSubmit={createGroup}><input required value={newGroup} onChange={e=>setNewGroup(e.target.value)} placeholder="Nome do grupo"/><button className="primary">Criar grupo</button></form></div><div className="admin-section"><h3>Grupos cadastrados</h3><div className="group-list">{groups.map(g=><article key={g.id}><b>{g.name}</b><span>{g._count?.users||0} participantes</span></article>)}</div></div></div>}
  </section>;
 }
