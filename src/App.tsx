@@ -253,7 +253,7 @@ function App() {
   };
 
   const renderAdvisorText = (content: string) => {
-    const lines = content.replace(/\*\*(.*?)\*\*/g, '$1').split('\\n');
+    const lines = content.replace(/\*\*(.*?)\*\*/g, '$1').split('\n');
     return <div className="advisor-document-content">{lines.map((line, index) => {
       const clean = line.trim();
       if (!clean) return <div className="advisor-space" key={index}/>;
