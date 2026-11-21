@@ -98,7 +98,9 @@ function App() {
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState('');
-  const [loginEmail, setLoginEmail] = useState('');\n  const [registerName, setRegisterName] = useState('');\n  const [registerMode, setRegisterMode] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [registerName, setRegisterName] = useState('');
+  const [registerMode, setRegisterMode] = useState(false);
   const [loginPassword, setLoginPassword] = useState('');
   const [resetMessage, setResetMessage] = useState('');
   const [mode, setMode] = useState('full');
@@ -251,7 +253,8 @@ function App() {
   };
 
   const renderAdvisorText = (content: string) => {
-    const lines = content.replace(/\*\*(.*?)\*\*/g, '$1').split('\n');
+    const lines = content.replace(/\*\*(.*?)\*\*/g, '$1').split('
+');
     return <div className="advisor-document-content">{lines.map((line, index) => {
       const clean = line.trim();
       if (!clean) return <div className="advisor-space" key={index}/>;
