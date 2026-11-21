@@ -6,7 +6,30 @@ import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
-import nodemailer from 'nodemailer';
+async function sendPasswordResetEmail(to: string, rawToken: string) {
+  const apiKey = process.env.BREVO_API_KEY;
+  const senderEmail = process.env.MAIL_FROM;
+  if (!apiKey || !senderEmail) throw new Error('BREVO_EMAIL_NOT_CONFIGURED');
+
+  const base = (process.env.PUBLIC_APP_URL || '').replace(/\\/$/, '');
+  const resetUrl = base + '/reset-password.html?token=' + encodeURIComponent(rawToken);
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: { 'accept': 'application/json', 'api-key': apiKey, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      sender: { name: 'HSI — Suporte', email: senderEmail },
+      to: [{ email: to }],
+      subject: 'Redefinição de senha — HSI Visual Cognitivo',
+      textContent: 'Recebemos uma solicitação para redefinir sua senha. Acesse o link seguro: ' + resetUrl + '\\n\\nO link expira em 30 minutos e só pode ser utilizado uma vez. Se você não solicitou esta alteração, ignore esta mensagem.',
+      htmlContent: '<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#17233b"><h2>Redefinição de senha</h2><p>Recebemos uma solicitação para redefinir a senha da sua conta HSI.</p><p><a href="' + resetUrl + '" style="display:inline-block;padding:12px 20px;background:#5865d9;color:#fff;text-decoration:none;border-radius:8px">Criar nova senha</a></p><p>O link expira em 30 minutos e só pode ser utilizado uma vez.</p><p>Se você não solicitou esta alteração, ignore esta mensagem.</p><small>HSI Visual Cognitivo · ENAT</small></div>'
+    })
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    console.error('Brevo transactional email failed:', response.status, detail.slice(0, 500));
+    throw new Error('BREVO_EMAIL_SEND_FAILED');
+  }
+}
 import { PrismaClient, UserRole, UserStatus } from '@prisma/client';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
@@ -69,7 +92,7 @@ app.get('/api/auth/me', authenticate, (req, res) => res.json({ user: publicUser(
 app.post('/api/auth/forgot-password', asyncRoute(async (req, res) => {
   const email = z.string().email().safeParse(req.body?.email);
   if (!email.success) return res.status(400).json({ error: 'Informe um e-mail válido.' });
-  if (!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.MAIL_FROM)) return res.status(503).json({ error: 'O serviço de recuperação de senha ainda não foi configurado. Procure o administrador da plataforma.' });
+  if (!(process.env.BREVO_API_KEY && process.env.MAIL_FROM && process.env.PUBLIC_APP_URL)) return res.status(503).json({ error: 'O serviço de recuperação de senha ainda não foi configurado. Procure o administrador da plataforma.' });
   const user = await prisma.user.findUnique({ where: { email: email.data.toLowerCase() } });
   const generic = { message: 'Se o endereço estiver cadastrado, você receberá instruções para redefinir a senha.' };
   if (!user || user.status !== UserStatus.ACTIVE) return res.json(generic);
@@ -77,11 +100,7 @@ app.post('/api/auth/forgot-password', asyncRoute(async (req, res) => {
   const rawToken = crypto.randomBytes(32).toString('hex');
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
   await prisma.passwordResetToken.create({ data: { userId: user.id, tokenHash, expiresAt: new Date(Date.now() + 30 * 60 * 1000) } });
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.MAIL_FROM) {
-    const transport = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT || 587), secure: process.env.SMTP_SECURE === 'true', auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } });
-    const base = process.env.PUBLIC_APP_URL || '';
-    await transport.sendMail({ from: process.env.MAIL_FROM, to: user.email, subject: 'Redefinição de senha — HSI Visual Cognitivo', text: 'Para redefinir sua senha, acesse: ' + base + '/reset-password.html?token=' + rawToken + '\nO link expira em 30 minutos.' });
-  }
+  await sendPasswordResetEmail(user.email, rawToken);
   return res.json(generic);
 }));
 
