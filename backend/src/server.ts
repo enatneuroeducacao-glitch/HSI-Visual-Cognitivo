@@ -17,7 +17,7 @@ async function sendPasswordResetEmail(to: string, rawToken: string) {
   const senderEmail = process.env.MAIL_FROM;
   if (!apiKey || !senderEmail) throw new Error('BREVO_EMAIL_NOT_CONFIGURED');
 
-  const base = (process.env.PUBLIC_APP_URL || '').replace(/\\/$/, '');
+  const base = (process.env.PUBLIC_APP_URL || '').replace(/\/+$/, '');
   const resetUrl = base + '/reset-password.html?token=' + encodeURIComponent(rawToken);
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
@@ -26,7 +26,7 @@ async function sendPasswordResetEmail(to: string, rawToken: string) {
       sender: { name: 'HSI — Suporte', email: senderEmail },
       to: [{ email: to }],
       subject: 'Redefinição de senha — HSI Visual Cognitivo',
-      textContent: 'Recebemos uma solicitação para redefinir sua senha. Acesse o link seguro: ' + resetUrl + '\\n\\nO link expira em 30 minutos e só pode ser utilizado uma vez. Se você não solicitou esta alteração, ignore esta mensagem.',
+      textContent: 'Recebemos uma solicitação para redefinir sua senha. Acesse o link seguro: ' + resetUrl + '\n\nO link expira em 30 minutos e só pode ser utilizado uma vez. Se você não solicitou esta alteração, ignore esta mensagem.',
       htmlContent: '<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#17233b"><h2>Redefinição de senha</h2><p>Recebemos uma solicitação para redefinir a senha da sua conta HSI.</p><p><a href="' + resetUrl + '" style="display:inline-block;padding:12px 20px;background:#5865d9;color:#fff;text-decoration:none;border-radius:8px">Criar nova senha</a></p><p>O link expira em 30 minutos e só pode ser utilizado uma vez.</p><p>Se você não solicitou esta alteração, ignore esta mensagem.</p><small>HSI Visual Cognitivo · ENAT</small></div>'
     })
   });
