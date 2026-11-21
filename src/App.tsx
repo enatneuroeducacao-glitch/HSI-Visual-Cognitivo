@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { auth, api } from './lib/api';
 import AdminPanel from './AdminPanel';
+import DothpAssessment from './DothpAssessment';
 
 type Axis = {
   id: string;
@@ -490,6 +491,9 @@ function App() {
         >
           ⌂ <span>Painel inicial</span>
         </button>
+        <button className={view === 'dothp' ? 'nav-item active' : 'nav-item'} onClick={() => setView('dothp')}>
+          ◉ <span>HSI-DOTH-P comportamental</span>
+        </button>
         <button
           className={view === 'history' ? 'nav-item active' : 'nav-item'}
           onClick={() => {
@@ -527,7 +531,9 @@ function App() {
             <h2>
               {view === 'home'
                 ? 'Painel de avaliação'
-                : view === 'history'
+                : view === 'dothp'
+                  ? 'Avaliação comportamental HSI-DOTH-P'
+                  : view === 'history'
                   ? 'Histórico de avaliações'
                   : view === 'test'
                     ? 'Sessão em andamento'
@@ -544,6 +550,7 @@ function App() {
         </header>
 
         {view === 'admin' && (user.role === 'ADMIN' || user.role === 'ANALYST') && <AdminPanel role={user.role} />}
+        {view === 'dothp' && <DothpAssessment />}
 
         {view === 'home' && (
           <section className="content">
