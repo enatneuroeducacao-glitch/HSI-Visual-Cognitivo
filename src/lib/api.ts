@@ -37,7 +37,7 @@ export const auth = {
     try { return (await api.get('/api/auth/me')).data.user; }
     catch { setToken(null); return null; }
   },
-  async signInWithPassword(email: string, password: string) {
+  async register(name: string, email: string, password: string) {\n    const response = await api.post('/api/auth/register', { name, email, password });\n    setToken(response.data.token);\n    return response.data.user;\n  },\n  async signInWithPassword(email: string, password: string) {
     const response = await api.post('/api/auth/login', { email, password });
     setToken(response.data.token);
     return response.data.user;

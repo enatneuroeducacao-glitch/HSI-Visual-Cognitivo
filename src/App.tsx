@@ -98,7 +98,7 @@ function App() {
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState('');
-  const [loginEmail, setLoginEmail] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');\n  const [registerName, setRegisterName] = useState('');\n  const [registerMode, setRegisterMode] = useState(false);
   const [loginPassword, setLoginPassword] = useState('');
   const [resetMessage, setResetMessage] = useState('');
   const [mode, setMode] = useState('full');
@@ -441,19 +441,31 @@ function App() {
             setAuthError('');
             setResetMessage('');
             try {
-              await auth.signInWithPassword(loginEmail, loginPassword);
-              setUser(await auth.getUser());
+              if (registerMode) {
+                const created = await auth.register(registerName, loginEmail, loginPassword);
+                setUser(created);
+              } else {
+                await auth.signInWithPassword(loginEmail, loginPassword);
+                setUser(await auth.getUser());
+              }
             } catch (error: any) {
-              setAuthError(error?.response?.data?.error || 'Não foi possível autenticar. Confira suas credenciais.');
+              setAuthError(error?.response?.data?.error || (registerMode ? 'Não foi possível criar sua conta.' : 'Não foi possível autenticar. Confira suas credenciais.'));
             }
           }}>
+            {registerMode && <>
+              <label htmlFor="register-name">Nome completo</label>
+              <input id="register-name" type="text" required minLength={2} maxLength={120} autoComplete="name" value={registerName} onChange={e => setRegisterName(e.target.value)} placeholder="Seu nome completo" />
+            </>}
             <label htmlFor="login-email">E-mail</label>
-            <input id="login-email" type="email" required autoComplete="username" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="seu@email.com" />
+            <input id="login-email" type="email" required autoComplete="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="seu@email.com" />
             <label htmlFor="login-password">Senha</label>
-            <input id="login-password" type="password" required autoComplete="current-password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Sua senha" />
-            <button className="primary full" type="submit">Entrar na plataforma</button>
+            <input id="login-password" type="password" required minLength={registerMode ? 12 : 1} maxLength={200} autoComplete={registerMode ? 'new-password' : 'current-password'} value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder={registerMode ? 'Mínimo de 12 caracteres' : 'Sua senha'} />
+            <button className="primary full" type="submit">{registerMode ? 'Criar minha conta' : 'Entrar na plataforma'}</button>
           </form>
-          <button className="forgot-link" onClick={async () => {
+          <button className="forgot-link" onClick={() => { setRegisterMode(!registerMode); setAuthError(''); setResetMessage(''); setLoginPassword(''); }}>
+            {registerMode ? 'Já tenho uma conta · Fazer login' : 'Criar minha conta'}
+          </button>
+          {!registerMode && <button className="forgot-link" onClick={async () => {
             const email = loginEmail.trim();
             if (!email) { setAuthError('Informe seu e-mail para solicitar a redefinição.'); return; }
             try {
@@ -461,7 +473,8 @@ function App() {
               setResetMessage(response.data.message);
               setAuthError('');
             } catch { setAuthError('Não foi possível solicitar a redefinição.'); }
-          }}>Esqueci minha senha</button>
+          }}>Esqueci minha senha</button>}
+          {registerMode && <p className="legal-note">A conta criada terá perfil de participante. Utilize um e-mail ao qual você tenha acesso, pois ele será necessário para recuperar sua senha.</p>}
           {resetMessage && <div className="notice success">{resetMessage}</div>}
           <p className="legal-note">
             Os resultados são indicadores experimentais de desempenho. Não
