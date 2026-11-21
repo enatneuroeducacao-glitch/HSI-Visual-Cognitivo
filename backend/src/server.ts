@@ -6,6 +6,12 @@ import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
+import { PrismaClient, UserRole, UserStatus } from '@prisma/client';
+import { z } from 'zod';
+import { Prisma } from '@prisma/client';
+import { questions } from './question-bank.js';
+import { hasRole, validateAssessmentMode } from './security.js';
+
 async function sendPasswordResetEmail(to: string, rawToken: string) {
   const apiKey = process.env.BREVO_API_KEY;
   const senderEmail = process.env.MAIL_FROM;
@@ -30,11 +36,7 @@ async function sendPasswordResetEmail(to: string, rawToken: string) {
     throw new Error('BREVO_EMAIL_SEND_FAILED');
   }
 }
-import { PrismaClient, UserRole, UserStatus } from '@prisma/client';
-import { z } from 'zod';
-import { Prisma } from '@prisma/client';
-import { questions } from './question-bank.js';
-import { hasRole, validateAssessmentMode } from './security.js';
+
 
 const prisma = new PrismaClient();
 const app = express();
