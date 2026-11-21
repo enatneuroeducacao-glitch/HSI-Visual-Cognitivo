@@ -252,6 +252,7 @@ function App() {
     }
   };
 
+  // Preserve paragraph boundaries returned by the advisor.
   const renderAdvisorText = (content: string) => {
     const lines = content.replace(/\*\*(.*?)\*\*/g, '$1').split('\n');
     return <div className="advisor-document-content">{lines.map((line, index) => {
