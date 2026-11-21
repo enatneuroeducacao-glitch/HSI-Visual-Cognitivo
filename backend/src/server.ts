@@ -89,6 +89,40 @@ app.post('/api/auth/login', asyncRoute(async (req, res) => {
   return res.json({ token, expiresIn: 1800, user: publicUser(user as AuthUser) });
 }));
 
+
+const selfRegistrationSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().max(254),
+  password: z.string().min(12).max(200)
+}).strict();
+
+app.post('/api/auth/register', asyncRoute(async (req, res) => {
+  const parsed = selfRegistrationSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Informe nome, e-mail válido e senha com pelo menos 12 caracteres.' });
+  const data = parsed.data;
+  const email = data.email.toLowerCase();
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) return res.status(409).json({ error: 'Este e-mail já possui uma conta. Entre ou utilize a recuperação de senha.' });
+  try {
+    const user = await prisma.user.create({
+      data: {
+        name: data.name,
+        email,
+        passwordHash: await bcrypt.hash(data.password, 12),
+        role: UserRole.PARTICIPANT,
+        status: UserStatus.ACTIVE
+      },
+      select: { id:true,name:true,email:true,role:true,status:true,participantCode:true,groupId:true }
+    });
+    await prisma.auditLog.create({ data: { actorId: user.id, action: 'AUTH_SELF_REGISTER', targetType: 'USER', targetId: user.id } });
+    const token = jwt.sign({}, JWT_SECRET!, { subject: user.id, expiresIn: '30m', issuer: 'hsi-visual-cognitivo' });
+    return res.status(201).json({ token, expiresIn: 1800, user: publicUser(user as AuthUser) });
+  } catch (error: any) {
+    if (error?.code === 'P2002') return res.status(409).json({ error: 'Este e-mail já possui uma conta. Entre ou utilize a recuperação de senha.' });
+    throw error;
+  }
+}));
+
 app.get('/api/auth/me', authenticate, (req, res) => res.json({ user: publicUser(req.authUser!) }));
 
 app.post('/api/auth/forgot-password', asyncRoute(async (req, res) => {
