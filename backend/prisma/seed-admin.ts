@@ -11,13 +11,18 @@ async function main() {
   if (!name || !email || !password || password.length < 12) {
     throw new Error('Defina ADMIN_NAME, ADMIN_EMAIL e ADMIN_PASSWORD com pelo menos 12 caracteres.');
   }
+
+  const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+  if (existing) {
+    console.log('Administrador inicial já existe; nenhuma credencial foi alterada.');
+    return;
+  }
+
   const passwordHash = await bcrypt.hash(password, 12);
-  await prisma.user.upsert({
-    where: { email },
-    update: { name, passwordHash, role: UserRole.ADMIN, status: UserStatus.ACTIVE },
-    create: { name, email, passwordHash, role: UserRole.ADMIN, status: UserStatus.ACTIVE }
+  await prisma.user.create({
+    data: { name, email, passwordHash, role: UserRole.ADMIN, status: UserStatus.ACTIVE }
   });
-  console.log('Administrador inicial criado/atualizado.');
+  console.log('Administrador inicial criado.');
 }
 
 main().finally(() => prisma.$disconnect());
