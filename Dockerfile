@@ -15,4 +15,4 @@ ENV NODE_ENV=production
 ENV PORT=10000
 EXPOSE 10000
 
-CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
+CMD ["sh", "-c", "npx prisma migrate deploy && if [ -n \"$ADMIN_EMAIL\" ]; then npm run db:seed-admin; fi && npm start"]
