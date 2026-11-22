@@ -45,14 +45,25 @@ export default function AdminPanel({role}:Props) {
  const [loading,setLoading]=useState(false);
  const load=async()=>{
   setLoading(true);setError('');
-  try {
-   const q=new URLSearchParams({from:new Date(from+'T00:00:00').toISOString(),to:new Date(to+'T23:59:59').toISOString(),...(groupId?{groupId}:{})});
-   const [a,b]=await Promise.all([api.get('/api/analytics?'+q.toString()),api.get('/api/admin/behavior?'+q.toString())]);setAnalytics(a.data);setBehavior(b.data);
-   if(role==='ADMIN'){const c=await api.get('/api/admin/overview');setCommandData(c.data);}
-   const g=await api.get('/api/groups');setGroups(g.data.groups);
-   if(role==='ADMIN'){const p=await api.get('/api/users');setPeople(p.data.users);}
-  } catch(e:any){setAnalytics(null);setBehavior(null);setError(e?.response?.data?.error || e.message || 'Não foi possível carregar os dados.');}
-  finally{setLoading(false);}
+  const q=new URLSearchParams({from:new Date(from+'T00:00:00').toISOString(),to:new Date(to+'T23:59:59').toISOString(),...(groupId?{groupId}:{})});
+  const failures:string[]=[];
+  const [a,b]=await Promise.allSettled([api.get('/api/analytics?'+q.toString()),api.get('/api/admin/behavior?'+q.toString())]);
+  if(a.status==='fulfilled')setAnalytics(a.value.data);
+  else{setAnalytics(null);failures.push(a.reason?.response?.data?.error||a.reason?.message||'Indicadores cognitivos indisponíveis.');}
+  if(b.status==='fulfilled')setBehavior(b.value.data);
+  else{setBehavior(null);failures.push(b.reason?.response?.data?.error||b.reason?.message||'Indicadores comportamentais indisponíveis.');}
+  if(role==='ADMIN'){
+   try{const c=await api.get('/api/admin/overview');setCommandData(c.data);}
+   catch(e:any){setCommandData(null);failures.push(e?.response?.data?.error||'Não foi possível carregar os indicadores administrativos.');}
+  }
+  try{const g=await api.get('/api/groups');setGroups(g.data.groups);}
+  catch(e:any){setGroups([]);failures.push(e?.response?.data?.error||'Não foi possível carregar os grupos.');}
+  if(role==='ADMIN'){
+   try{const p=await api.get('/api/users');setPeople(p.data.users);}
+   catch(e:any){setPeople([]);failures.push(e?.response?.data?.error||'Não foi possível carregar os participantes.');}
+  }
+  setError([...new Set(failures)].join(' '));
+  setLoading(false);
  };
  useEffect(()=>{void load();},[]);
  const createPerson=async(e:FormEvent)=>{
