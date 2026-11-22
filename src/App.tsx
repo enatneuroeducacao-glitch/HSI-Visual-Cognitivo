@@ -318,7 +318,6 @@ function App() {
     };
   };
 
-  const perfectOpinion = (result: SavedResult) => `Na sessão realizada em ${new Date(result.completedAt).toLocaleString('pt-BR')}, o participante obteve 100% de acertos (${result.correct} de ${result.totalQuestions} questões) nos ${result.axes.length} eixo(s) efetivamente avaliados. O resultado descreve exclusivamente o desempenho nesta aplicação. Recomenda-se manter a prática e ampliar gradualmente a variedade dos exercícios. Este parecer não constitui diagnóstico, laudo ou avaliação de aptidão para dirigir.`;
 
   const recommendationsFor = (accuracy: number, axisId: string) => {
     const data: Record<string, { focus: string; practices: string[]; traffic: string }> = {
