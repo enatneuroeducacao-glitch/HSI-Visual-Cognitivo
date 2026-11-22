@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { auth, api } from './lib/api';
 import AdminPanel from './AdminPanel';
 import DothpAssessment from './DothpAssessment';
+import InstrumentHistory from './InstrumentHistory';
 
 type Axis = {
   id: string;
@@ -987,12 +988,13 @@ function App() {
                     <div className="history-score">
                       <strong>{r.accuracy}%</strong>
                       <small>precisão</small>
-
+                      <button className="secondary history-opinion-button" onClick={() => openReport(r)}>Ver parecer individual</button>
                     </div>
                   </article>
                 ))}
               </div>
             )}
+            <InstrumentHistory cognitiveResults={results} />
           </section>
         )}
       </main>
