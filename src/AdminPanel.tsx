@@ -9,7 +9,8 @@ type Group = { id:string; name:string; _count?:{users:number} };
 type Analytics = { summary:{assessments:number;participants:number;totalQuestions:number;correct:number;accuracy:number}; axes:Array<{axisId:string;title:string;correct:number;total:number;accuracy:number;averageSeconds:number}>; results:Array<{id:string;participant:string;participantCode:string|null;group:string;completedAt:string;mode:string;accuracy:number;totalQuestions:number;correct:number}> };
 
 export default function AdminPanel({role}:Props) {
- const [tab,setTab]=useState<'overview'|'participants'|'groups'|'reports'>('overview');
+ const [tab,setTab]=useState<'command'|'overview'|'participants'|'groups'|'reports'>('command');
+ const [commandData,setCommandData]=useState<any>(null);
  const [from,setFrom]=useState(new Date(Date.now()-30*86400000).toISOString().slice(0,10));
  const [to,setTo]=useState(new Date().toISOString().slice(0,10));
  const [groupId,setGroupId]=useState('');
@@ -31,6 +32,7 @@ export default function AdminPanel({role}:Props) {
   try {
    const q=new URLSearchParams({from:new Date(from+'T00:00:00').toISOString(),to:new Date(to+'T23:59:59').toISOString(),...(groupId?{groupId}:{})});
    const a=await api.get('/api/analytics?'+q.toString());setAnalytics(a.data);
+   if(role==='ADMIN'){const c=await api.get('/api/admin/overview');setCommandData(c.data);}
    const g=await api.get('/api/groups');setGroups(g.data.groups);
    if(role==='ADMIN'){const p=await api.get('/api/users');setPeople(p.data.users);}
   } catch(e:any){setError(e?.response?.data?.error || e.message || 'Não foi possível carregar os dados.');}
@@ -57,12 +59,21 @@ export default function AdminPanel({role}:Props) {
  return <section className="admin-workspace">
   <div className="admin-heading"><div><span className="eyebrow">GESTÃO E INTELIGÊNCIA</span><h2>{role==='ADMIN'?'Central administrativa':'Painel de análise'}</h2><p>Indicadores descritivos de avaliações registradas na plataforma.</p></div><button className="primary" onClick={()=>void load()} disabled={loading}>{loading?'Atualizando…':'Atualizar dados'}</button></div>
   <nav className="admin-tabs">
+   {role==='ADMIN'&&<button className={tab==='command'?'selected':''} onClick={()=>setTab('command')}>Central de comando</button>}
    <button className={tab==='overview'?'selected':''} onClick={()=>setTab('overview')}>Visão coletiva</button>
    {role==='ADMIN'&&<button className={tab==='participants'?'selected':''} onClick={()=>setTab('participants')}>Participantes</button>}
    {role==='ADMIN'&&<button className={tab==='groups'?'selected':''} onClick={()=>setTab('groups')}>Grupos</button>}
    <button className={tab==='reports'?'selected':''} onClick={()=>setTab('reports')}>Relatórios</button>
   </nav>
   {notice&&<div className="notice success">{notice}</div>}{error&&<div className="notice error">{error}</div>}
+
+  {tab==='command'&&role==='ADMIN'&&<div className="admin-content command-center">
+   <div className="command-welcome"><div><span className="eyebrow">PAINEL DE CONTROLE DO HSI</span><h3>Central de comando</h3><p>Visão operacional, dados recebidos, atividade administrativa e acesso aos módulos de gestão.</p></div><div className="command-status"><i/> Sistema conectado <small>{commandData?.generatedAt?new Date(commandData.generatedAt).toLocaleString('pt-BR'):'Aguardando atualização'}</small></div></div>
+   {commandData&&<><div className="command-metrics"><article><small>CONTAS CADASTRADAS</small><strong>{commandData.counts.users}</strong><span>{commandData.counts.activeUsers} ativas</span></article><article><small>PARTICIPANTES</small><strong>{commandData.counts.participants}</strong><span>Contas de participantes</span></article><article><small>AVALIAÇÕES RECEBIDAS</small><strong>{commandData.counts.assessments}</strong><span>Registros persistidos</span></article><article><small>GRUPOS</small><strong>{commandData.counts.groups}</strong><span>{commandData.counts.analysts} analistas · {commandData.counts.admins} administradores</span></article></div>
+   <div className="command-shortcuts"><button onClick={()=>setTab('participants')}>Gerenciar usuários <span>Contas, perfis e acessos →</span></button><button onClick={()=>setTab('groups')}>Gerenciar grupos <span>Organização dos participantes →</span></button><button onClick={()=>setTab('reports')}>Central de relatórios <span>Análises e exportações →</span></button><button onClick={()=>setTab('overview')}>Dados das avaliações <span>Indicadores e desempenho →</span></button></div>
+   <div className="command-columns"><div className="admin-section"><div className="admin-section-head"><h3>Últimas avaliações recebidas</h3><span>{commandData.latestResults.length} registros recentes</span></div><div className="table-scroll"><table><thead><tr><th>Participante</th><th>Grupo</th><th>Data</th><th>Acertos</th><th>Precisão</th></tr></thead><tbody>{commandData.latestResults.map((x:any)=><tr key={x.id}><td>{x.user?.name||x.participantCode}</td><td>{x.user?.group?.name||'Sem grupo'}</td><td>{new Date(x.completedAt).toLocaleString('pt-BR')}</td><td>{x.correct}/{x.totalQuestions}</td><td>{x.accuracy}%</td></tr>)}</tbody></table>{!commandData.latestResults.length&&<p className="reports-empty">Ainda não há avaliações registradas.</p>}</div></div>
+   <div className="admin-section"><div className="admin-section-head"><h3>Atividade administrativa</h3><span>Últimos 20 eventos</span></div><div className="command-audit">{commandData.auditEvents.map((x:any)=><article key={x.id}><b>{x.action}</b><span>{x.targetType}{x.targetId?' · '+x.targetId:''}</span><small>{new Date(x.createdAt).toLocaleString('pt-BR')} · {x.actorId?'Usuário '+x.actorId:'Sistema'}</small></article>)}{!commandData.auditEvents.length&&<p className="reports-empty">Nenhuma atividade registrada.</p>}</div></div></div></>}
+  </div>}
   {tab==='overview'&&<div className="admin-content">
    <div className="filters"><label>De<input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>Até<input type="date" value={to} onChange={e=>setTo(e.target.value)}/></label><label>Grupo<select value={groupId} onChange={e=>setGroupId(e.target.value)}><option value="">Todos os grupos</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></label><button className="primary" onClick={()=>void load()}>Aplicar filtros</button><button className="secondary" onClick={()=>window.print()}>Imprimir relatório</button></div>
    {analytics&&<><div className="metric-grid"><article><small>AVALIAÇÕES</small><strong>{analytics.summary.assessments}</strong></article><article><small>PARTICIPANTES</small><strong>{analytics.summary.participants}</strong></article><article><small>QUESTÕES RESPONDIDAS</small><strong>{analytics.summary.totalQuestions}</strong></article><article><small>PRECISÃO AGREGADA</small><strong>{analytics.summary.accuracy}%</strong></article></div>

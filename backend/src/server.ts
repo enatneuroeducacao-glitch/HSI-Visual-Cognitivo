@@ -179,6 +179,17 @@ app.patch('/api/users/:id', authenticate, allow(UserRole.ADMIN), asyncRoute(asyn
   await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'USER_UPDATE',targetType:'USER',targetId:user.id,metadata:parsed.data}});
   res.json({user});
 }));
+app.get('/api/admin/overview', authenticate, allow(UserRole.ADMIN), asyncRoute(async (_req,res) => {
+  const [users,activeUsers,participants,analysts,admins,groups,assessments,latestResults,auditEvents] = await Promise.all([
+    prisma.user.count(), prisma.user.count({where:{status:UserStatus.ACTIVE}}),
+    prisma.user.count({where:{role:UserRole.PARTICIPANT}}), prisma.user.count({where:{role:UserRole.ANALYST}}),
+    prisma.user.count({where:{role:UserRole.ADMIN}}), prisma.participantGroup.count(),
+    prisma.assessmentResult.count(),
+    prisma.assessmentResult.findMany({take:10,orderBy:{completedAt:'desc'},select:{id:true,participantCode:true,mode:true,completedAt:true,accuracy:true,totalQuestions:true,correct:true,durationSeconds:true,user:{select:{name:true,group:{select:{name:true}}}}}}),
+    prisma.auditLog.findMany({take:20,orderBy:{createdAt:'desc'},select:{id:true,actorId:true,action:true,targetType:true,targetId:true,metadata:true,createdAt:true}})
+  ]);
+  res.json({generatedAt:new Date().toISOString(),system:{api:'operational',database:'connected'},counts:{users,activeUsers,participants,analysts,admins,groups,assessments},latestResults,auditEvents});
+}));
 app.get('/api/groups', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (_req,res) => {
   const groups = await prisma.participantGroup.findMany({include:{_count:{select:{users:true}}},orderBy:{name:'asc'}});
   res.json({groups});
