@@ -321,7 +321,10 @@ app.get('/api/analytics', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), 
     }
   }
   const uniqueParticipants=new Set(rows.map(row=>row.userId)).size;
+  const minimumGroupSize=5;
+  if(rows.length>0&&uniqueParticipants<minimumGroupSize)return res.status(403).json({error:'Indicadores suprimidos por privacidade: são necessários pelo menos cinco participantes distintos no conjunto selecionado.',privacy:{suppressed:true,minimumGroupSize}});
   res.json({
+    privacy:{suppressed:false,minimumGroupSize},
     generatedAt:new Date().toISOString(),
     summary:{assessments:rows.length,participants:uniqueParticipants,totalQuestions,correct,accuracy:totalQuestions?Math.round(correct/totalQuestions*100):0,completeAssessments:rows.filter(r=>r.mode==='Avaliação completa').length,axisAssessments:rows.filter(r=>r.mode==='Eixo individual').length},
     axes:[...axisMap.entries()].map(([axisId,value])=>({axisId,title:value.title,correct:value.correct,total:value.total,accuracy:value.total?Math.round(value.correct/value.total*100):0,averageSeconds:value.attempts?Math.round(value.seconds/value.attempts):0,fastErrors:value.fastErrors,slowCorrect:value.slowCorrect})),
@@ -338,8 +341,12 @@ app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN,UserRole.ANALY
   const where={completedAt:{gte:from,lte:to},...(groupId?{user:{groupId}}:{})};
   const [cognitive,instruments]=await Promise.all([
     prisma.assessmentResult.findMany({where,select:{totalQuestions:true,correct:true,axes:true,answerDetails:true,completedAt:true}}),
-    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},...(groupId?{user:{groupId}}:{})},select:{context:true,dimensions:true,answers:true,completedAt:true}})
+    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},...(groupId?{user:{groupId}}:{})},select:{userId:true,context:true,dimensions:true,answers:true,completedAt:true}})
   ]);
+  const minimumGroupSize=5;
+  const cognitiveParticipants=new Set(cognitive.map(row=>row.userId)).size;
+  const behavioralParticipants=new Set(instruments.map(row=>row.userId)).size;
+  if((cognitive.length>0&&cognitiveParticipants<minimumGroupSize)||(instruments.length>0&&behavioralParticipants<minimumGroupSize))return res.status(403).json({error:'Relatório suprimido por privacidade: cada conjunto de respostas precisa conter pelo menos cinco participantes distintos.',privacy:{suppressed:true,minimumGroupSize}});
   const dimensionMap=new Map<string,{name:string;sum:number;scoreSum:number;count:number;low:number;mid:number;high:number}>();
   const contextMap=new Map<string,number>();
   const likert=[0,0,0,0,0];
@@ -361,7 +368,7 @@ app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN,UserRole.ANALY
   const dothpCount=instruments.length;
   res.json({
     generatedAt:new Date().toISOString(),
-    privacy:{individualRecords:false,minimumGroupSize:1,identifiersIncluded:false},
+    privacy:{individualRecords:false,minimumGroupSize,identifiersIncluded:false,suppressed:false},
     totals:{cognitiveAssessments:cognitive.length,cognitiveQuestions,cognitiveCorrect,cognitiveAccuracy:cognitiveQuestions?Math.round(cognitiveCorrect/cognitiveQuestions*100):0,dothpAssessments:dothpCount},
     dothp:{dimensions:[...dimensionMap.entries()].map(([id,v])=>({id,name:v.name,mean:v.count?Number((v.sum/v.count).toFixed(2)):0,score:v.count?Math.round(v.scoreSum/v.count):0,applications:v.count,low:v.low,medium:v.mid,high:v.high})),contexts:[...contextMap.entries()].map(([context,count])=>({context,count})),likertDistribution:likert.map((count,index)=>({value:index+1,count}))},
     cognitive:{responseCount:cognitiveQuestions}
