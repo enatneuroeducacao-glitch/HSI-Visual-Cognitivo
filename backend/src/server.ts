@@ -330,7 +330,7 @@ app.get('/api/analytics', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), 
   });
 }));
 
-app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN), asyncRoute(async (req,res) => {
+app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res) => {
   const from=typeof req.query.from==='string'?new Date(req.query.from):new Date(Date.now()-365*86400000);
   const to=typeof req.query.to==='string'?new Date(req.query.to):new Date();
   const groupId=typeof req.query.groupId==='string'?req.query.groupId:undefined;
@@ -364,7 +364,7 @@ app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN), asyncRoute(a
     privacy:{individualRecords:false,minimumGroupSize:1,identifiersIncluded:false},
     totals:{cognitiveAssessments:cognitive.length,cognitiveQuestions,cognitiveCorrect,cognitiveAccuracy:cognitiveQuestions?Math.round(cognitiveCorrect/cognitiveQuestions*100):0,dothpAssessments:dothpCount},
     dothp:{dimensions:[...dimensionMap.entries()].map(([id,v])=>({id,name:v.name,mean:v.count?Number((v.sum/v.count).toFixed(2)):0,score:v.count?Math.round(v.scoreSum/v.count):0,applications:v.count,low:v.low,medium:v.mid,high:v.high})),contexts:[...contextMap.entries()].map(([context,count])=>({context,count})),likertDistribution:likert.map((count,index)=>({value:index+1,count}))},
-    cognitive:{axes:[...new Map(cognitive.flatMap(row=>(row.axes as Array<Record<string,unknown>>).map(raw=>[String(raw.axisId),raw] as [string,Record<string,unknown>])).map(([id,raw])=>[id,{id,title:String(raw.title||id)}] as [string,{id:string;title:string}])).values()],responseCount:cognitiveQuestions}
+    cognitive:{responseCount:cognitiveQuestions}
   });
 }));
 
