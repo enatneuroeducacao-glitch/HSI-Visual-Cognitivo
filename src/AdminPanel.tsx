@@ -97,7 +97,7 @@ export default function AdminPanel({role}:Props) {
     <div className="admin-section"><div className="section-heading"><div><span className="eyebrow">SÉRIE HISTÓRICA</span><h3>Evolução mensal</h3></div></div><TrendChart data={analytics.timeline||[]}/></div>
    </div>
    <div className="pro-grid">
-    <div className="admin-section"><div className="section-heading"><div><span className="eyebrow">FLUIDEZ DE RESPOSTA</span><h3>Distribuição temporal</h3></div></div><ResponseBars data={analytics.responseTimes||{under3:0,from3to5:0,from6to10:0,over10:0}/></div>
+    <div className="admin-section"><div className="section-heading"><div><span className="eyebrow">FLUIDEZ DE RESPOSTA</span><h3>Distribuição temporal</h3></div></div><ResponseBars data={analytics.responseTimes||{under3:0,from3to5:0,from6to10:0,over10:0}}/></div>
     <div className="admin-section"><div className="section-heading"><div><span className="eyebrow">CONTROLE DE QUALIDADE</span><h3>Sinais para revisão metodológica</h3></div></div>
      {analytics.axes.some(x=>(x.fastErrors||0)>0||(x.slowCorrect||0)>0)?<div className="quality-list">{analytics.axes.filter(x=>(x.fastErrors||0)>0||(x.slowCorrect||0)>0).map(x=><article key={x.axisId}><b>{x.title}</b><span>{x.fastErrors||0} respostas incorretas em até 5 s · {x.slowCorrect||0} acertos com latência de 15 s ou mais</span><small>Indício exploratório. Verificar compreensão do item, acessibilidade, dispositivo e contexto antes de qualquer conclusão.</small></article>)}</div>:<p className="quality-neutral">Nenhum padrão temporal de atenção prioritária foi identificado nos dados agregados deste recorte. Isso não comprova validade nem ausência de inconsistências.</p>}
     </div>
