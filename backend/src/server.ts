@@ -186,7 +186,7 @@ app.get('/api/admin/overview', authenticate, allow(UserRole.ADMIN), asyncRoute(a
     prisma.user.count({where:{role:UserRole.ADMIN}}), prisma.participantGroup.count(),
     prisma.assessmentResult.count(),
     prisma.assessmentResult.findMany({take:10,orderBy:{completedAt:'desc'},select:{id:true,participantCode:true,mode:true,completedAt:true,accuracy:true,totalQuestions:true,correct:true,durationSeconds:true,user:{select:{name:true,group:{select:{name:true}}}}}}),
-    prisma.auditLog.findMany({take:20,orderBy:{createdAt:'desc'},include:{actor:{select:{name:true,email:true}}}})
+    prisma.auditLog.findMany({take:20,orderBy:{createdAt:'desc'},select:{id:true,actorId:true,action:true,targetType:true,targetId:true,metadata:true,createdAt:true}})
   ]);
   res.json({generatedAt:new Date().toISOString(),system:{api:'operational',database:'connected'},counts:{users,activeUsers,participants,analysts,admins,groups,assessments},latestResults,auditEvents});
 }));
