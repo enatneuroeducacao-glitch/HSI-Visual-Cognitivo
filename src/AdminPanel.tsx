@@ -37,7 +37,7 @@ export default function AdminPanel({role}:Props) {
    if(role==='ADMIN'){const c=await api.get('/api/admin/overview');setCommandData(c.data);}
    const g=await api.get('/api/groups');setGroups(g.data.groups);
    if(role==='ADMIN'){const p=await api.get('/api/users');setPeople(p.data.users);}
-  } catch(e:any){setError(e?.response?.data?.error || e.message || 'Não foi possível carregar os dados.');}
+  } catch(e:any){setAnalytics(null);setBehavior(null);setError(e?.response?.data?.error || e.message || 'Não foi possível carregar os dados.');}
   finally{setLoading(false);}
  };
  useEffect(()=>{void load();},[]);
