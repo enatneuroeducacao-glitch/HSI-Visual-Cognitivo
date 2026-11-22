@@ -871,6 +871,28 @@ function App() {
                   {observations.available && <p><strong>Limite interpretativo:</strong> as observações descrevem apenas o comportamento de resposta nesta tarefa. Não identificam traços de personalidade, impulsividade, ansiedade, déficit de atenção ou qualquer condição clínica.</p>}
                 </>;
               })()}
+              <h2>3.1. Análise das questões e dos padrões de resposta</h2>
+              {selectedReport.answerDetails?.length ? (() => {
+                const details=selectedReport.answerDetails!;
+                const errors=details.filter(item=>!item.correct);
+                const byAxis=selectedReport.axes.map(axis=>({axis,items:details.filter(item=>item.axisId===axis.axisId)}));
+                const strongest=[...selectedReport.axes].sort((a,b)=>b.accuracy-a.accuracy)[0];
+                const weakest=[...selectedReport.axes].sort((a,b)=>a.accuracy-b.accuracy)[0];
+                const sortedTimes=details.map(item=>item.seconds).sort((a,b)=>a-b);
+                const median=sortedTimes[Math.floor(sortedTimes.length/2)]||0;
+                const quickErrors=errors.filter(item=>item.seconds<median*.7);
+                const slowErrors=errors.filter(item=>item.seconds>median*1.5);
+                return <>
+                  <p>Esta seção examina as questões individualmente, identifica em quais eixos os erros se concentraram e relaciona cada resposta incorreta ao tempo utilizado. A análise é restrita aos exercícios apresentados nesta sessão.</p>
+                  {selectedReport.axes.length>1&&<div className="pdf-notice"><strong>Contraste entre eixos:</strong> maior precisão observada em {strongest.title} ({strongest.accuracy}%) e menor precisão em {weakest.title} ({weakest.accuracy}%). Essa diferença orienta a prioridade de revisão nesta amostra; não estabelece uma hierarquia estável de habilidades.</div>}
+                  <div className="pdf-kpis"><div><small>Questões para revisar</small><strong>{errors.length}</strong></div><div><small>Erros abaixo da mediana temporal</small><strong>{quickErrors.length}</strong></div><div><small>Erros acima de 1,5× a mediana</small><strong>{slowErrors.length}</strong></div><div><small>Mediana de resposta</small><strong>{median}s</strong></div></div>
+                  {byAxis.map(({axis,items})=><section className="pdf-axis" key={axis.axisId}>
+                    <h3>{axis.title}: {items.filter(item=>!item.correct).length} erro(s) em {items.length} questão(ões)</h3>
+                    {items.filter(item=>!item.correct).length ? <ul>{items.filter(item=>!item.correct).map(item=><li key={item.questionId}><strong>Enunciado:</strong> {item.prompt}<br/><strong>Alternativa selecionada:</strong> {item.selectedOption}<br/><strong>Alternativa considerada correta:</strong> {item.correctOption}<br/><strong>Tempo de resposta:</strong> {item.seconds} segundo(s)</li>)}</ul> : <p>Não houve respostas incorretas neste eixo nesta sessão. O resultado deve ser observado em outras tarefas e ocasiões antes de qualquer conclusão mais ampla.</p>}
+                  </section>)}
+                  <p><strong>Leitura dos tempos:</strong> {quickErrors.length?quickErrors.length+' erro(s) ocorreram em tempo inferior a 70% da mediana desta sessão. Vale verificar se houve leitura rápida, familiaridade com a tarefa ou interpretação diferente do enunciado. ':''}{slowErrors.length?slowErrors.length+' erro(s) ocorreram em tempo superior a 1,5 vez a mediana. Pode ser útil revisar a estratégia de resolução e a compreensão das pistas. ':''}{!quickErrors.length&&!slowErrors.length?'Os erros não se concentraram nos extremos temporais definidos por este critério interno. ':''}O tempo não permite, isoladamente, afirmar impulsividade, lentidão cognitiva ou qualquer condição clínica.</p>
+                </>;
+              })() : <div className="pdf-notice">Esta sessão não possui respostas item a item disponíveis. É possível interpretar os percentuais por eixo, mas não identificar com segurança quais enunciados e alternativas originaram cada resultado.</div>}
               <h2>4. Orientador ENAT</h2>
               <div className="advisor-panel no-print">
                 <p>Gere uma explicação individual dos resultados e um conjunto de exercícios novos, escolhidos conforme os dados desta avaliação.</p>
