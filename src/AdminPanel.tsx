@@ -45,14 +45,25 @@ export default function AdminPanel({role}:Props) {
  const [loading,setLoading]=useState(false);
  const load=async()=>{
   setLoading(true);setError('');
-  try {
-   const q=new URLSearchParams({from:new Date(from+'T00:00:00').toISOString(),to:new Date(to+'T23:59:59').toISOString(),...(groupId?{groupId}:{})});
-   const [a,b]=await Promise.all([api.get('/api/analytics?'+q.toString()),api.get('/api/admin/behavior?'+q.toString())]);setAnalytics(a.data);setBehavior(b.data);
-   if(role==='ADMIN'){const c=await api.get('/api/admin/overview');setCommandData(c.data);}
-   const g=await api.get('/api/groups');setGroups(g.data.groups);
-   if(role==='ADMIN'){const p=await api.get('/api/users');setPeople(p.data.users);}
-  } catch(e:any){setAnalytics(null);setBehavior(null);setError(e?.response?.data?.error || e.message || 'Não foi possível carregar os dados.');}
-  finally{setLoading(false);}
+  const q=new URLSearchParams({from:new Date(from+'T00:00:00').toISOString(),to:new Date(to+'T23:59:59').toISOString(),...(groupId?{groupId}:{})});
+  const failures:string[]=[];
+  const [a,b]=await Promise.allSettled([api.get('/api/analytics?'+q.toString()),api.get('/api/admin/behavior?'+q.toString())]);
+  if(a.status==='fulfilled')setAnalytics(a.value.data);
+  else{setAnalytics(null);failures.push(a.reason?.response?.data?.error||a.reason?.message||'Indicadores cognitivos indisponíveis.');}
+  if(b.status==='fulfilled')setBehavior(b.value.data);
+  else{setBehavior(null);failures.push(b.reason?.response?.data?.error||b.reason?.message||'Indicadores comportamentais indisponíveis.');}
+  if(role==='ADMIN'){
+   try{const c=await api.get('/api/admin/overview');setCommandData(c.data);}
+   catch(e:any){setCommandData(null);failures.push(e?.response?.data?.error||'Não foi possível carregar os indicadores administrativos.');}
+  }
+  try{const g=await api.get('/api/groups');setGroups(g.data.groups);}
+  catch(e:any){setGroups([]);failures.push(e?.response?.data?.error||'Não foi possível carregar os grupos.');}
+  if(role==='ADMIN'){
+   try{const p=await api.get('/api/users');setPeople(p.data.users);}
+   catch(e:any){setPeople([]);failures.push(e?.response?.data?.error||'Não foi possível carregar os participantes.');}
+  }
+  setError([...new Set(failures)].join(' '));
+  setLoading(false);
  };
  useEffect(()=>{void load();},[]);
  const createPerson=async(e:FormEvent)=>{
@@ -84,7 +95,7 @@ export default function AdminPanel({role}:Props) {
   {notice&&<div className="notice success">{notice}</div>}{error&&<div className="notice error">{error}</div>}
 
   {tab==='command'&&role==='ADMIN'&&<div className="admin-content command-center">
-   <div className="command-welcome"><div><span className="eyebrow">PAINEL DE CONTROLE DO HSI</span><h3>Central de comando</h3><p>Visão operacional, dados recebidos, atividade administrativa e acesso aos módulos de gestão.</p></div><div className="command-status"><i/> Sistema conectado <small>{commandData?.generatedAt?new Date(commandData.generatedAt).toLocaleString('pt-BR'):'Aguardando atualização'}</small></div></div>
+   <div className="command-welcome"><div><span className="eyebrow">PAINEL DE CONTROLE DO HSI</span><h3>Central de comando</h3><p>Visão operacional, dados recebidos, atividade administrativa e acesso aos módulos de gestão.</p></div><div className="command-status"><i style={{background:commandData?.system?.api==='operational'&&commandData?.system?.database==='connected'?'#55d69b':'#e7b45a'}}/> {commandData?.system?.api==='operational'&&commandData?.system?.database==='connected'?'API e banco conectados':commandData?'Conexão indisponível':'Verificando conexão'} <small>{commandData?.generatedAt?new Date(commandData.generatedAt).toLocaleString('pt-BR'):'Aguardando resposta da API'}</small></div></div>
    {commandData&&<><div className="command-metrics"><article><small>CONTAS CADASTRADAS</small><strong>{commandData.counts.users}</strong><span>{commandData.counts.activeUsers} ativas</span></article><article><small>PARTICIPANTES</small><strong>{commandData.counts.participants}</strong><span>Contas de participantes</span></article><article><small>AVALIAÇÕES RECEBIDAS</small><strong>{commandData.counts.assessments}</strong><span>Registros persistidos</span></article><article><small>GRUPOS</small><strong>{commandData.counts.groups}</strong><span>{commandData.counts.analysts} analistas · {commandData.counts.admins} administradores</span></article></div>
    <div className="command-shortcuts"><button onClick={()=>setTab('participants')}>Gerenciar usuários <span>Contas, perfis e acessos →</span></button><button onClick={()=>setTab('groups')}>Gerenciar grupos <span>Organização dos participantes →</span></button><button onClick={()=>setTab('reports')}>Central de relatórios <span>Análises e exportações →</span></button><button onClick={()=>setTab('overview')}>Dados das avaliações <span>Indicadores e desempenho →</span></button></div>
    <div className="admin-section"><h3>Privacidade e governança</h3><p>Esta central apresenta somente indicadores estatísticos consolidados. Não exibe nomes, e-mails, códigos, identificadores, respostas individuais ou histórico individual.</p></div></>}
