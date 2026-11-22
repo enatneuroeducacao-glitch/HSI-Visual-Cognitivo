@@ -260,7 +260,12 @@ app.get('/api/analytics', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), 
     const id=String(raw.axisId || 'unknown'), current=axesMap.get(id) || {title:String(raw.title || id),correct:0,total:0,seconds:0,attempts:0};
     current.correct+=Number(raw.correct || 0);current.total+=Number(raw.total || 0);current.seconds+=Number(raw.averageSeconds || 0);current.attempts++;axesMap.set(id,current);
   }
-  res.json({summary:{assessments:count,participants,totalQuestions,correct,accuracy:totalQuestions?Math.round(correct/totalQuestions*100):0},axes:[...axesMap.entries()].map(([axisId,v])=>({axisId,title:v.title,correct:v.correct,total:v.total,accuracy:v.total?Math.round(v.correct/v.total*100):0,averageSeconds:v.attempts?Math.round(v.seconds/v.attempts):0})),results:rows.map((r,index)=>({id:r.id,participant:req.authUser!.role === UserRole.ADMIN ? r.user.name : 'Participante ' + (index + 1),participantCode:req.authUser!.role === UserRole.ADMIN ? r.user.participantCode : null,group:r.user.group?.name || 'Sem grupo',completedAt:r.completedAt.toISOString(),mode:r.mode,accuracy:r.accuracy,totalQuestions:r.totalQuestions,correct:r.correct,durationSeconds:r.durationSeconds,averageSeconds:r.totalQuestions?Math.round(r.durationSeconds/r.totalQuestions):0}))});
+  const participantLabels = new Map<string,string>();
+  if (req.authUser!.role !== UserRole.ADMIN) {
+    const orderedUsers = [...new Set(rows.map(r => r.userId))];
+    orderedUsers.forEach((userId,index) => participantLabels.set(userId, 'Participante ' + (index + 1)));
+  }
+  res.json({summary:{assessments:count,participants,totalQuestions,correct,accuracy:totalQuestions?Math.round(correct/totalQuestions*100):0},axes:[...axesMap.entries()].map(([axisId,v])=>({axisId,title:v.title,correct:v.correct,total:v.total,accuracy:v.total?Math.round(v.correct/v.total*100):0,averageSeconds:v.attempts?Math.round(v.seconds/v.attempts):0})),results:rows.map(r=>({id:r.id,participant:req.authUser!.role === UserRole.ADMIN ? r.user.name : participantLabels.get(r.userId)!,participantCode:req.authUser!.role === UserRole.ADMIN ? r.user.participantCode : null,group:r.user.group?.name || 'Sem grupo',completedAt:r.completedAt.toISOString(),mode:r.mode,accuracy:r.accuracy,totalQuestions:r.totalQuestions,correct:r.correct,durationSeconds:r.durationSeconds,averageSeconds:r.totalQuestions?Math.round(r.durationSeconds/r.totalQuestions):0}))});
 }));
 
 app.post('/api/advisor', authenticate, asyncRoute(async (req, res) => {
