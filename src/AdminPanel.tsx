@@ -6,7 +6,8 @@ import ReportsCenter from './ReportsCenter';
 type Props = { role: 'ADMIN' | 'ANALYST' | 'PARTICIPANT' };
 type Person = { id:string; name:string; email:string; role:string; status:string; participantCode:string|null; groupId:string|null; group?:{name:string}|null };
 type Group = { id:string; name:string; _count?:{users:number} };
-type Analytics = { summary:{assessments:number;participants:number;totalQuestions:number;correct:number;accuracy:number;completeAssessments?:number;axisAssessments?:number}; axes:Array<{axisId:string;title:string;correct:number;total:number;accuracy:number;averageSeconds:number;fastErrors?:number;slowCorrect?:number}>; responseTimes?:{under3:number;from3to5:number;from6to10:number;over10:number}; timeline?:Array<{period:string;assessments:number;questions:number;accuracy:number}> };\ntype Behavior = { totals:{cognitiveAssessments:number;cognitiveQuestions:number;cognitiveCorrect:number;cognitiveAccuracy:number;dothpAssessments:number}; dothp:{dimensions:Array<{id:string;name:string;mean:number;score:number;applications:number;low:number;medium:number;high:number}>;contexts:Array<{context:string;count:number}>;likertDistribution:Array<{value:number;count:number}>} };
+type Analytics = { summary:{assessments:number;participants:number;totalQuestions:number;correct:number;accuracy:number;completeAssessments?:number;axisAssessments?:number}; axes:Array<{axisId:string;title:string;correct:number;total:number;accuracy:number;averageSeconds:number;fastErrors?:number;slowCorrect?:number}>; responseTimes?:{under3:number;from3to5:number;from6to10:number;over10:number}; timeline?:Array<{period:string;assessments:number;questions:number;accuracy:number}> };
+type Behavior = { totals:{cognitiveAssessments:number;cognitiveQuestions:number;cognitiveCorrect:number;cognitiveAccuracy:number;dothpAssessments:number}; dothp:{dimensions:Array<{id:string;name:string;mean:number;score:number;applications:number;low:number;medium:number;high:number}>;contexts:Array<{context:string;count:number}>;likertDistribution:Array<{value:number;count:number}>} };
 
 export default function AdminPanel({role}:Props) {
  const [tab,setTab]=useState<'command'|'overview'|'participants'|'groups'|'reports'>('command');
@@ -14,7 +15,8 @@ export default function AdminPanel({role}:Props) {
  const [from,setFrom]=useState(new Date(Date.now()-30*86400000).toISOString().slice(0,10));
  const [to,setTo]=useState(new Date().toISOString().slice(0,10));
  const [groupId,setGroupId]=useState('');
- const [analytics,setAnalytics]=useState<Analytics|null>(null);\n const [behavior,setBehavior]=useState<Behavior|null>(null);
+ const [analytics,setAnalytics]=useState<Analytics|null>(null);
+ const [behavior,setBehavior]=useState<Behavior|null>(null);
  const [people,setPeople]=useState<Person[]>([]);
  const [groups,setGroups]=useState<Group[]>([]);
  const [name,setName]=useState('');
