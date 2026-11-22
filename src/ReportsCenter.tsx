@@ -19,7 +19,7 @@ export default function ReportsCenter(){
   const q=new URLSearchParams({from:new Date(from+'T00:00:00').toISOString(),to:new Date(to+'T23:59:59').toISOString(),...(groupId?{groupId}:{})});
   const [a,b,g]=await Promise.all([api.get('/api/analytics?'+q.toString()),api.get('/api/admin/behavior?'+q.toString()),api.get('/api/groups')]);
   setAnalytics(a.data);setBehavior(b.data);setGroups(g.data.groups||[]);setGeneratedAt(new Date().toISOString());
- }catch(e:any){setError(e?.response?.data?.error||'Não foi possível gerar os relatórios agregados.');}finally{setLoading(false);}};
+ }catch(e:any){setAnalytics(null);setBehavior(null);setError(e?.response?.data?.error||'Não foi possível gerar os relatórios agregados.');}finally{setLoading(false);}};
  useEffect(()=>{void load();},[]);
  const exportCsv=()=>{
   if(!analytics||!behavior)return;
