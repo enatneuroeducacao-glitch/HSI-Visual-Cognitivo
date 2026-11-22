@@ -181,15 +181,13 @@ app.patch('/api/users/:id', authenticate, allow(UserRole.ADMIN), asyncRoute(asyn
   res.json({user});
 }));
 app.get('/api/admin/overview', authenticate, allow(UserRole.ADMIN), asyncRoute(async (_req,res) => {
-  const [users,activeUsers,participants,analysts,admins,groups,assessments,latestResults,auditEvents] = await Promise.all([
+  const [users,activeUsers,participants,analysts,admins,groups,assessments,instrumentAssessments] = await Promise.all([
     prisma.user.count(), prisma.user.count({where:{status:UserStatus.ACTIVE}}),
     prisma.user.count({where:{role:UserRole.PARTICIPANT}}), prisma.user.count({where:{role:UserRole.ANALYST}}),
     prisma.user.count({where:{role:UserRole.ADMIN}}), prisma.participantGroup.count(),
-    prisma.assessmentResult.count(),
-    prisma.assessmentResult.findMany({take:10,orderBy:{completedAt:'desc'},select:{id:true,participantCode:true,mode:true,completedAt:true,accuracy:true,totalQuestions:true,correct:true,durationSeconds:true,user:{select:{name:true,group:{select:{name:true}}}}}}),
-    prisma.auditLog.findMany({take:20,orderBy:{createdAt:'desc'},select:{id:true,actorId:true,action:true,targetType:true,targetId:true,metadata:true,createdAt:true}})
+    prisma.assessmentResult.count(), prisma.instrumentAssessment.count()
   ]);
-  res.json({generatedAt:new Date().toISOString(),system:{api:'operational',database:'connected'},counts:{users,activeUsers,participants,analysts,admins,groups,assessments},latestResults,auditEvents});
+  res.json({generatedAt:new Date().toISOString(),system:{api:'operational',database:'connected'},counts:{users,activeUsers,participants,analysts,admins,groups,assessments,instrumentAssessments}});
 }));
 app.get('/api/groups', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (_req,res) => {
   const groups = await prisma.participantGroup.findMany({include:{_count:{select:{users:true}}},orderBy:{name:'asc'}});
@@ -303,20 +301,71 @@ app.get('/api/analytics', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), 
   const groupId = typeof req.query.groupId === 'string' ? req.query.groupId : undefined;
   if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from > to) return res.status(400).json({error:'Período inválido.'});
   const where = { completedAt:{gte:from,lte:to}, ...(groupId ? {user:{groupId}} : {}) };
-  const rows = await prisma.assessmentResult.findMany({where,include:{user:{select:{id:true,name:true,participantCode:true,group:{select:{id:true,name:true}}}}},orderBy:{completedAt:'desc'},take:5000});
-  const count=rows.length, participants=new Set(rows.map(r=>r.userId)).size;
-  const totalQuestions=rows.reduce((s,r)=>s+r.totalQuestions,0), correct=rows.reduce((s,r)=>s+r.correct,0);
-  const axesMap=new Map<string,{title:string;correct:number;total:number;seconds:number;attempts:number}>();
-  for(const row of rows) for(const raw of (row.axes as Array<Record<string,unknown>>)) {
-    const id=String(raw.axisId || 'unknown'), current=axesMap.get(id) || {title:String(raw.title || id),correct:0,total:0,seconds:0,attempts:0};
-    current.correct+=Number(raw.correct || 0);current.total+=Number(raw.total || 0);current.seconds+=Number(raw.averageSeconds || 0);current.attempts++;axesMap.set(id,current);
+  const rows=await prisma.assessmentResult.findMany({where,select:{userId:true,mode:true,totalQuestions:true,correct:true,durationSeconds:true,axes:true,answerDetails:true,completedAt:true}});
+  const totalQuestions=rows.reduce((sum,row)=>sum+row.totalQuestions,0);
+  const correct=rows.reduce((sum,row)=>sum+row.correct,0);
+  const axisMap=new Map<string,{title:string;correct:number;total:number;seconds:number;attempts:number;fastErrors:number;slowCorrect:number}>();
+  const responseTimes={under3:0,from3to5:0,from6to10:0,over10:0};
+  for(const row of rows){
+    for(const raw of (row.axes as Array<Record<string,unknown>>)){
+      const id=String(raw.axisId||'unknown');
+      const current=axisMap.get(id)||{title:String(raw.title||id),correct:0,total:0,seconds:0,attempts:0,fastErrors:0,slowCorrect:0};
+      current.correct+=Number(raw.correct||0);current.total+=Number(raw.total||0);current.seconds+=Number(raw.averageSeconds||0);current.attempts++;axisMap.set(id,current);
+    }
+    for(const answer of (row.answerDetails as Array<Record<string,unknown>>)){
+      const seconds=Number(answer.seconds||0);
+      if(seconds<3) responseTimes.under3++; else if(seconds<=5) responseTimes.from3to5++; else if(seconds<=10) responseTimes.from6to10++; else responseTimes.over10++;
+      const axis=axisMap.get(String(answer.axisId||''));
+      if(axis && answer.correct===false && seconds<=5) axis.fastErrors++;
+      if(axis && answer.correct===true && seconds>=15) axis.slowCorrect++;
+    }
   }
-  const participantLabels = new Map<string,string>();
-  if (req.authUser!.role !== UserRole.ADMIN) {
-    const orderedUsers = [...new Set(rows.map(r => r.userId))];
-    orderedUsers.forEach((userId,index) => participantLabels.set(userId, 'Participante ' + (index + 1)));
+  const uniqueParticipants=new Set(rows.map(row=>row.userId)).size;
+  res.json({
+    generatedAt:new Date().toISOString(),
+    summary:{assessments:rows.length,participants:uniqueParticipants,totalQuestions,correct,accuracy:totalQuestions?Math.round(correct/totalQuestions*100):0,completeAssessments:rows.filter(r=>r.mode==='Avaliação completa').length,axisAssessments:rows.filter(r=>r.mode==='Eixo individual').length},
+    axes:[...axisMap.entries()].map(([axisId,value])=>({axisId,title:value.title,correct:value.correct,total:value.total,accuracy:value.total?Math.round(value.correct/value.total*100):0,averageSeconds:value.attempts?Math.round(value.seconds/value.attempts):0,fastErrors:value.fastErrors,slowCorrect:value.slowCorrect})),
+    responseTimes,
+    timeline:[...rows.reduce((map,row)=>{const key=row.completedAt.toISOString().slice(0,7);const value=map.get(key)||{period:key,assessments:0,questions:0,correct:0};value.assessments++;value.questions+=row.totalQuestions;value.correct+=row.correct;map.set(key,value);return map;},new Map<string,{period:string;assessments:number;questions:number;correct:number}>()).values()].sort((a,b)=>a.period.localeCompare(b.period)).map(v=>({...v,accuracy:v.questions?Math.round(v.correct/v.questions*100):0}))
+  });
+}));
+
+app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN), asyncRoute(async (req,res) => {
+  const from=typeof req.query.from==='string'?new Date(req.query.from):new Date(Date.now()-365*86400000);
+  const to=typeof req.query.to==='string'?new Date(req.query.to):new Date();
+  const groupId=typeof req.query.groupId==='string'?req.query.groupId:undefined;
+  if(!Number.isFinite(from.getTime())||!Number.isFinite(to.getTime())||from>to)return res.status(400).json({error:'Período inválido.'});
+  const where={completedAt:{gte:from,lte:to},...(groupId?{user:{groupId}}:{})};
+  const [cognitive,instruments]=await Promise.all([
+    prisma.assessmentResult.findMany({where,select:{totalQuestions:true,correct:true,axes:true,answerDetails:true,completedAt:true}}),
+    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},...(groupId?{user:{groupId}}:{})},select:{context:true,dimensions:true,answers:true,completedAt:true}})
+  ]);
+  const dimensionMap=new Map<string,{name:string;sum:number;scoreSum:number;count:number;low:number;mid:number;high:number}>();
+  const contextMap=new Map<string,number>();
+  const likert=[0,0,0,0,0];
+  for(const result of instruments){
+    contextMap.set(result.context,(contextMap.get(result.context)||0)+1);
+    for(const raw of (result.dimensions as Array<Record<string,unknown>>)){
+      const id=String(raw.id||'unknown');
+      const item=dimensionMap.get(id)||{name:String(raw.name||id),sum:0,scoreSum:0,count:0,low:0,mid:0,high:0};
+      item.sum+=Number(raw.mean||0);item.scoreSum+=Number(raw.score||0);item.count++;
+      const score=Number(raw.score||0);if(score<34)item.low++;else if(score<67)item.mid++;else item.high++;
+      dimensionMap.set(id,item);
+    }
+    for(const answer of (result.answers as Array<Record<string,unknown>>)){
+      const value=Number(answer.scoredResponse||0);if(value>=1&&value<=5)likert[value-1]++;
+    }
   }
-  res.json({summary:{assessments:count,participants,totalQuestions,correct,accuracy:totalQuestions?Math.round(correct/totalQuestions*100):0},axes:[...axesMap.entries()].map(([axisId,v])=>({axisId,title:v.title,correct:v.correct,total:v.total,accuracy:v.total?Math.round(v.correct/v.total*100):0,averageSeconds:v.attempts?Math.round(v.seconds/v.attempts):0})),results:rows.map(r=>({id:r.id,participant:req.authUser!.role === UserRole.ADMIN ? r.user.name : participantLabels.get(r.userId)!,participantCode:req.authUser!.role === UserRole.ADMIN ? r.user.participantCode : null,group:r.user.group?.name || 'Sem grupo',completedAt:r.completedAt.toISOString(),mode:r.mode,accuracy:r.accuracy,totalQuestions:r.totalQuestions,correct:r.correct,durationSeconds:r.durationSeconds,averageSeconds:r.totalQuestions?Math.round(r.durationSeconds/r.totalQuestions):0}))});
+  const cognitiveQuestions=cognitive.reduce((sum,row)=>sum+row.totalQuestions,0);
+  const cognitiveCorrect=cognitive.reduce((sum,row)=>sum+row.correct,0);
+  const dothpCount=instruments.length;
+  res.json({
+    generatedAt:new Date().toISOString(),
+    privacy:{individualRecords:false,minimumGroupSize:1,identifiersIncluded:false},
+    totals:{cognitiveAssessments:cognitive.length,cognitiveQuestions,cognitiveCorrect,cognitiveAccuracy:cognitiveQuestions?Math.round(cognitiveCorrect/cognitiveQuestions*100):0,dothpAssessments:dothpCount},
+    dothp:{dimensions:[...dimensionMap.entries()].map(([id,v])=>({id,name:v.name,mean:v.count?Number((v.sum/v.count).toFixed(2)):0,score:v.count?Math.round(v.scoreSum/v.count):0,applications:v.count,low:v.low,medium:v.mid,high:v.high})),contexts:[...contextMap.entries()].map(([context,count])=>({context,count})),likertDistribution:likert.map((count,index)=>({value:index+1,count}))},
+    cognitive:{axes:[...new Map(cognitive.flatMap(row=>(row.axes as Array<Record<string,unknown>>).map(raw=>[String(raw.axisId),raw] as [string,Record<string,unknown>])).map(([id,raw])=>[id,{id,title:String(raw.title||id)}] as [string,{id:string;title:string}])).values()],responseCount:cognitiveQuestions}
+  });
 }));
 
 app.post('/api/advisor', authenticate, asyncRoute(async (req, res) => {
