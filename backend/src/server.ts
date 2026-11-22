@@ -340,7 +340,7 @@ app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN,UserRole.ANALY
   if(!Number.isFinite(from.getTime())||!Number.isFinite(to.getTime())||from>to)return res.status(400).json({error:'Período inválido.'});
   const where={completedAt:{gte:from,lte:to},...(groupId?{user:{groupId}}:{})};
   const [cognitive,instruments]=await Promise.all([
-    prisma.assessmentResult.findMany({where,select:{totalQuestions:true,correct:true,axes:true,answerDetails:true,completedAt:true}}),
+    prisma.assessmentResult.findMany({where,select:{userId:true,totalQuestions:true,correct:true,axes:true,answerDetails:true,completedAt:true}}),
     prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},...(groupId?{user:{groupId}}:{})},select:{userId:true,context:true,dimensions:true,answers:true,completedAt:true}})
   ]);
   const minimumGroupSize=5;
