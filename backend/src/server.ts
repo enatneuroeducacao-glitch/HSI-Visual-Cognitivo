@@ -10,6 +10,7 @@ import { PrismaClient, UserRole, UserStatus } from '@prisma/client';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { questions } from './question-bank.js';
+import { scoreDothp } from './instrument-scoring.js';
 import { hasRole, validateAssessmentMode } from './security.js';
 
 async function sendPasswordResetEmail(to: string, rawToken: string) {
@@ -255,6 +256,45 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
   const result = await prisma.assessmentResult.create({data:{id:d.id,userId:req.authUser!.id,participantCode:req.authUser!.participantCode || 'SEM-CÓDIGO',mode:d.mode,completedAt:new Date(d.completedAt),totalQuestions:verified.length,correct,accuracy,durationSeconds:d.durationSeconds,axes:axes as Prisma.InputJsonValue,answerDetails:verified as Prisma.InputJsonValue}});
   await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'ASSESSMENT_SUBMIT',targetType:'RESULT',targetId:result.id}});
   res.status(201).json({result});
+}));
+
+
+const instrumentResultSchema = z.object({
+  id: z.string().min(8).max(100),
+  instrument: z.literal('HSI-DOTH-P'),
+  context: z.enum(['cotidiano','trabalho','educacao','familia','social','digital','transito','integrado']),
+  answers: z.array(z.number().int().min(1).max(5)).length(25),
+}).strict();
+
+app.get('/api/instrument-results', authenticate, asyncRoute(async (req,res) => {
+  const rows = await prisma.instrumentAssessment.findMany({
+    where: { userId: req.authUser!.id },
+    orderBy: { completedAt: 'desc' },
+    take: 200,
+  });
+  res.json({ results: rows.map(row => ({ ...row, completedAt: row.completedAt.toISOString() })) });
+}));
+
+app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => {
+  const parsed = instrumentResultSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Questionário incompleto ou dados inválidos.', details: parsed.error.flatten() });
+  const data = parsed.data;
+  const existing = await prisma.instrumentAssessment.findUnique({ where: { id: data.id } });
+  if (existing) return res.status(409).json({ error: 'Identificador de avaliação já utilizado.' });
+  const scored = scoreDothp(data.answers);
+  const result = await prisma.instrumentAssessment.create({
+    data: {
+      id: data.id,
+      userId: req.authUser!.id,
+      instrument: data.instrument,
+      context: data.context,
+      completedAt: new Date(),
+      answers: scored.answers as Prisma.InputJsonValue,
+      dimensions: scored.dimensions as Prisma.InputJsonValue,
+    },
+  });
+  await prisma.auditLog.create({ data: { actorId: req.authUser!.id, action: 'INSTRUMENT_SUBMIT', targetType: 'INSTRUMENT_RESULT', targetId: result.id, metadata: { instrument: data.instrument, context: data.context } } });
+  res.status(201).json({ result: { ...result, completedAt: result.completedAt.toISOString() } });
 }));
 
 app.get('/api/analytics', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res) => {

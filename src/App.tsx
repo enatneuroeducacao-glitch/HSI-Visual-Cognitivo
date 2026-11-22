@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { auth, api } from './lib/api';
 import AdminPanel from './AdminPanel';
 import DothpAssessment from './DothpAssessment';
+import InstrumentHistory from './InstrumentHistory';
 
 type Axis = {
   id: string;
@@ -317,7 +318,6 @@ function App() {
     };
   };
 
-  const perfectOpinion = (result: SavedResult) => `Na sessão realizada em ${new Date(result.completedAt).toLocaleString('pt-BR')}, o participante obteve 100% de acertos (${result.correct} de ${result.totalQuestions} questões) nos ${result.axes.length} eixo(s) efetivamente avaliados. O resultado descreve exclusivamente o desempenho nesta aplicação. Recomenda-se manter a prática e ampliar gradualmente a variedade dos exercícios. Este parecer não constitui diagnóstico, laudo ou avaliação de aptidão para dirigir.`;
 
   const recommendationsFor = (accuracy: number, axisId: string) => {
     const data: Record<string, { focus: string; practices: string[]; traffic: string }> = {
@@ -830,21 +830,6 @@ function App() {
               <button className="back-link" onClick={() => setView('history')}>← Voltar ao histórico</button>
               <button className="primary" onClick={printReport}>Baixar / imprimir PDF</button>
             </div>
-            {selectedReport.accuracy === 100 ? (
-              <article className="pdf-report short-opinion">
-                <header className="pdf-header institutional-header"><div className="institutional-logos"><img src="/resources/logo-enat.png" alt="Logo ENAT"/><img src="/resources/neurociencia-transito.jpeg" alt="Neurociência Aplicada ao Trânsito"/></div><div className="institutional-title"><span className="eyebrow">ENSINO NEUROEDUCACIONAL APLICADO AO TRÂNSITO</span><h1>HSI Visual Cognitivo</h1><p>Parecer breve de desempenho</p></div></header>
-                <div className="pdf-identification"><div><small>PARTICIPANTE</small><strong>{selectedReport.participantCode}</strong></div><div><small>DATA</small><strong>{new Date(selectedReport.completedAt).toLocaleString('pt-BR')}</strong></div><div><small>SESSÃO</small><strong>{selectedReport.mode}</strong></div></div>
-                <h2>Resultado</h2><p>{perfectOpinion(selectedReport)}</p>
-                <div className="pdf-notice">Os resultados do HSI Visual Cognitivo são experimentais e não representam o índice HSI, não substituem o HSI-DOTH-P e não permitem classificar aptidão para dirigir.</div>
-                <h2>Orientador ENAT</h2>
-                <div className="advisor-panel no-print">
-                  <p>Mesmo com 100% de acertos, você pode solicitar uma explicação dos resultados e exercícios para ampliar a variedade e a complexidade das tarefas.</p>
-                  <button className="primary" onClick={generateAdvisor} disabled={advisorLoading}>{advisorLoading ? 'Preparando orientação…' : 'Gerar orientação e exercícios personalizados'}</button>
-                  {advisorError && <p className="advisor-error">{advisorError}</p>}
-                </div>
-                {advisorText && <section className="advisor-output"><h3>Orientação personalizada</h3>{renderAdvisorText(advisorText)}<p className="advisor-disclaimer">Conteúdo educativo gerado automaticamente a partir dos registros disponíveis. Não constitui avaliação clínica ou de aptidão para dirigir.</p></section>}
-              </article>
-            ) : (
             <article className="pdf-report">
               <header className="pdf-header institutional-header">
                 <div className="institutional-logos"><img src="/resources/logo-enat.png" alt="Logo ENAT"/><img src="/resources/neurociencia-transito.jpeg" alt="Neurociência Aplicada ao Trânsito"/></div>
@@ -911,7 +896,6 @@ function App() {
               <div className="pdf-notice"><strong>Nota metodológica:</strong> este relatório é educativo e descritivo. O HSI Visual Cognitivo encontra-se em fase experimental. Os percentuais não são normas populacionais nem escores psicométricos validados. Este documento não constitui diagnóstico, laudo, avaliação de aptidão para dirigir ou certificação. Não representa o índice HSI e não substitui o HSI-DOTH-P. A integração entre instrumentos depende de estudos de validade, confiabilidade e definição de critérios.</div>
               <footer className="pdf-footer">ENAT · HSI Visual Cognitivo · Gerado a partir dos registros desta sessão · {new Date().toLocaleDateString('pt-BR')}</footer>
             </article>
-            )}
           </section>
         )}
 
@@ -987,12 +971,13 @@ function App() {
                     <div className="history-score">
                       <strong>{r.accuracy}%</strong>
                       <small>precisão</small>
-
+                      <button className="secondary history-opinion-button" onClick={() => openReport(r)}>Ver parecer individual</button>
                     </div>
                   </article>
                 ))}
               </div>
             )}
+            <InstrumentHistory cognitiveResults={results} />
           </section>
         )}
       </main>

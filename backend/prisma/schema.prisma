@@ -30,6 +30,7 @@ model User {
   groupId            String?
   group              ParticipantGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   results            AssessmentResult[]
+  instrumentResults  InstrumentAssessment[]
   resetTokens        PasswordResetToken[]
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
@@ -87,4 +88,18 @@ model AuditLog {
 
   @@index([createdAt])
   @@index([actorId, createdAt])
+}
+model InstrumentAssessment {
+  id          String   @id
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instrument  String
+  context     String
+  completedAt DateTime
+  answers     Json
+  dimensions  Json
+  createdAt   DateTime @default(now())
+
+  @@index([userId, completedAt])
+  @@index([instrument, completedAt])
 }

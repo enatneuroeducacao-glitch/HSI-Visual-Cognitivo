@@ -1167,3 +1167,44 @@ button:disabled {
 .command-welcome{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding:24px;background:linear-gradient(115deg,#142d4b,#244e76);border-radius:14px;color:#fff;margin-bottom:18px}.command-welcome h3{font-size:24px;margin:7px 0}.command-welcome p{margin:0;color:#d3e0ee;font-size:13px}.command-welcome .eyebrow{color:#a9c6e2}.command-status{display:grid;grid-template-columns:10px auto;align-items:center;gap:8px;font-size:12px;white-space:nowrap}.command-status i{width:9px;height:9px;border-radius:50%;background:#55d69b;box-shadow:0 0 0 4px #ffffff20}.command-status small{grid-column:2;color:#c2d4e5;font-size:10px}.command-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin:18px 0}.command-metrics article{display:grid;gap:7px;background:#fff;border:1px solid #e0e7ef;border-radius:12px;padding:18px}.command-metrics small{font-size:10px;letter-spacing:.7px;color:#718198;font-weight:700}.command-metrics strong{font-size:29px;color:#193c60}.command-metrics span{font-size:11px;color:#78879a}.command-shortcuts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:18px 0}.command-shortcuts button{display:grid;gap:7px;text-align:left;padding:15px;background:#f5f8fc;border:1px solid #dfe7f0;border-radius:10px;color:#21496f;font-size:13px;font-weight:700;cursor:pointer}.command-shortcuts button span{font-size:10px;font-weight:400;color:#738399}.command-columns{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr);gap:14px}.command-audit{display:grid;max-height:390px;overflow:auto}.command-audit article{display:grid;gap:4px;padding:11px 2px;border-bottom:1px solid #edf0f4}.command-audit article b{font-size:11px;color:#294e73}.command-audit article span,.command-audit article small{font-size:10px;color:#748399}.command-center .admin-section{min-width:0}
 @media(max-width:900px){.command-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.command-shortcuts{grid-template-columns:repeat(2,minmax(0,1fr))}.command-columns{grid-template-columns:1fr}}
 @media(max-width:600px){.command-welcome{flex-direction:column}.command-status{white-space:normal}.command-metrics{gap:8px}.command-metrics article{padding:13px}.command-metrics strong{font-size:24px}.command-shortcuts{grid-template-columns:1fr}}
+
+/* Histórico de instrumentos comportamentais e pareceres individuais */
+.history-opinion-button{margin-top:9px;font-size:11px;padding:8px 11px;min-height:34px}
+.instrument-history{margin-top:24px;background:#fff;border:1px solid #e1e8f0;border-radius:14px;padding:22px}
+.instrument-history-heading,.instrument-record-head,.instrument-dimension-title{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.instrument-history-heading h3{font-size:20px;margin:6px 0}
+.instrument-history-heading p,.instrument-record-head p,.instrument-dimension-title p{font-size:12px;color:#728197;line-height:1.6;margin:5px 0}
+.instrument-count{background:#eef2ff;color:#4e5ec4;border-radius:20px;padding:7px 11px;font-size:11px;font-weight:700;white-space:nowrap}
+.instrument-empty,.instrument-error{padding:16px;border-radius:9px;background:#f5f7fb;color:#65748a;font-size:12px;line-height:1.6;margin-top:14px}
+.instrument-error{background:#fff1f0;color:#a3312a}
+.instrument-record{border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin-top:16px;break-inside:avoid}
+.instrument-record-head{align-items:center;border-bottom:1px solid #edf1f5;padding-bottom:14px}
+.instrument-record-head h4{font-size:16px;margin:6px 0}
+.instrument-opinion,.instrument-crossread{padding:15px 0;border-bottom:1px solid #edf1f5}
+.instrument-opinion h4,.instrument-crossread h4{font-size:13px;margin:0 0 8px;color:#243c58}
+.instrument-opinion p,.instrument-crossread p{font-size:11px;line-height:1.7;color:#56667c;margin:6px 0}
+.instrument-cognitive-snapshot{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+.instrument-cognitive-snapshot>div{display:grid;gap:5px;background:#f5f7fb;border-radius:9px;padding:12px}
+.instrument-cognitive-snapshot small{font-size:9px;letter-spacing:.6px;text-transform:uppercase;color:#78869a}
+.instrument-cognitive-snapshot strong{font-size:22px;color:#4f5fc8}
+.instrument-cognitive-snapshot span{font-size:10px;color:#68788e;line-height:1.5}
+.instrument-dimensions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}
+.instrument-dimension{padding:15px;border:1px solid #e8edf3;border-radius:10px;min-width:0}
+.instrument-dimension-title{align-items:center}
+.instrument-dimension-title h4{font-size:13px;margin:0}
+.instrument-dimension-title p{font-size:10px;margin:4px 0}
+.instrument-dimension-title>strong{font-size:18px;color:#4f5fc8;white-space:nowrap}
+.instrument-score-track{height:7px;border-radius:20px;background:#e9eef4;overflow:hidden;margin:10px 0}
+.instrument-score-track i{display:block;height:100%;background:#5a70d5;border-radius:20px}
+.instrument-interpretation{font-size:11px;line-height:1.65;color:#53647a}
+.instrument-dimension details{border-top:1px solid #edf1f5;padding-top:10px;margin-top:10px}
+.instrument-dimension summary{cursor:pointer;font-size:11px;font-weight:700;color:#425b79}
+.instrument-dimension ol{padding-left:19px;margin:12px 0 0}
+.instrument-dimension li{padding:7px 0;border-bottom:1px solid #f0f2f5}
+.instrument-dimension li p{font-size:10px;line-height:1.5;color:#45566d;margin:0 0 4px}
+.instrument-dimension li span{font-size:9px;color:#7b899b}
+.instrument-method-note{background:#f1f4f9;border-left:3px solid #7589a7;padding:13px 15px;margin-top:16px;font-size:10px;line-height:1.7;color:#596a80}
+.dothp-saved-notice{margin:12px 0;padding:11px 13px;border-radius:8px;background:#eaf7ef;color:#23633f;font-size:12px}
+.dothp-save-error{margin:12px 0;padding:11px 13px;border-radius:8px;background:#fff1f0;color:#a3312a;font-size:12px}
+@media(max-width:720px){.instrument-history{padding:15px}.instrument-history-heading,.instrument-record-head{flex-direction:column;align-items:stretch}.instrument-dimensions,.instrument-cognitive-snapshot{grid-template-columns:1fr}.instrument-record{padding:14px}.instrument-record-head button{width:100%}}
+@media print{.instrument-history{border:0;padding:0}.instrument-history-heading,.instrument-count,.instrument-record-head button,.instrument-dimension details summary{display:none!important}.instrument-record{border:0;padding:0;margin:0;break-after:page}.instrument-dimensions{grid-template-columns:repeat(2,minmax(0,1fr))}.instrument-dimension details>ol{display:block!important}}
