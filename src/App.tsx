@@ -107,6 +107,7 @@ function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [resetMessage, setResetMessage] = useState('');
   const [mode, setMode] = useState('full');
+  const [studyCode, setStudyCode] = useState('');
   const [runQuestions, setRunQuestions] = useState<Question[]>([]);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
@@ -370,6 +371,8 @@ function App() {
       completedAt: new Date().toISOString(),
       totalQuestions: finalAnswers.length,
       durationSeconds: totalSeconds,
+      instrumentVersion: '1.0',
+      ...(studyCode.trim() ? { studyCode: studyCode.trim() } : {}),
       answerDetails: finalAnswers.map(({ questionId, axisId, selected, seconds }) => ({ questionId, axisId, selected, seconds })),
     };
     setSaving(true);
@@ -589,6 +592,11 @@ function App() {
               </div>
             </div>
 
+            <div className="dothp-context">
+              <label htmlFor="cognitive-study-code">Código do estudo ou intervenção <small>(opcional)</small></label>
+              <input id="cognitive-study-code" maxLength={80} value={studyCode} onChange={e => setStudyCode(e.target.value)} placeholder="Preencha somente se esta avaliação fizer parte de um estudo específico" />
+              <p>Se informado, cada resultado será classificado como aplicação experimental e associado ao código declarado.</p>
+            </div>
             <div className="section-heading">
               <div>
                 <span className="eyebrow">SEIS EIXOS COGNITIVOS</span>
