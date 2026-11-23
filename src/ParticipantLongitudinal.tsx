@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from './lib/api';
 
-type Dimension={id:string;name:string;score:number;meanAcrossApplications?:number|null;observations?:number};
+type Dimension={id:string;name:string;score:number;latestScore?:number;meanAcrossApplications?:number|null;observations?:number};
 type ContextRow={context:string;label:string;applications:number;firstCompletedAt:string;latestCompletedAt:string;dimensions:Dimension[]};
 type BehavioralRow={id:string;context:string;contextLabel:string;contextVersion:string;completedAt:string;dimensions:Dimension[];comparisonWithPreviousSameContext:Array<{dimensionId:string;score:number;previousScore:number|null;difference:number|null}>};
 type CognitiveRow={id:string;mode:string;completedAt:string;accuracy:number;correct:number;totalQuestions:number;axes:Array<{axisId:string;title:string;accuracy:number;correct:number;total:number}>};
@@ -25,7 +25,7 @@ export default function ParticipantLongitudinal(){
    <section className="instrument-deep-reading"><h4>Leitura entre contextos</h4><p>Compare as dimensões do HSI-DOTH-P nos diferentes ambientes declarados. Diferenças entre contextos podem sugerir variação situacional percebida pelo participante; não demonstram, isoladamente, incoerência, intenção ou comportamento observado.</p></section>
    {data.contexts.length?<div className="instrument-deep-dimensions">{data.contexts.map(context=><article className="instrument-deep-dimension" key={context.context}>
     <div className="instrument-deep-head"><div><h4>{context.label}</h4><p>{context.applications} aplicação(ões) · última em {date(context.latestCompletedAt)}</p></div></div>
-    <div className="instrument-longitudinal-grid">{context.dimensions.map(d=><div key={d.id}><span>{d.name}</span><strong>{d.latestScore}/100</strong><small>Média histórica: {d.meanAcrossApplications??'—'} · {d.observations} registro(s)</small></div>)}</div>
+    <div className="instrument-longitudinal-grid">{context.dimensions.map(d=><div key={d.id}><span>{d.name}</span><strong>{d.latestScore??d.score}/100</strong><small>Média histórica: {d.meanAcrossApplications??'—'} · {d.observations} registro(s)</small></div>)}</div>
    </article>)}</div>:<p className="instrument-empty">Ainda não há aplicações comportamentais registradas.</p>}
    <section className="instrument-longitudinal"><h4>Evolução por aplicação — HSI-DOTH-P</h4>{data.behavioralTimeline.length?<div className="group-list">{[...data.behavioralTimeline].reverse().map(row=><article key={row.id}><b>{date(row.completedAt)} · {row.contextLabel}</b><span>{row.dimensions.map(d=>d.name+': '+d.score+'/100').join(' · ')}</span><small>{row.comparisonWithPreviousSameContext.map(d=>d.dimensionId+': '+delta(d.difference)).join(' | ')}</small></article>)}</div>:<p>Nenhum registro disponível.</p>}</section>
    <section className="instrument-longitudinal"><h4>Série cognitiva independente — HSI Visual Cognitivo</h4><p>Os percentuais abaixo pertencem exclusivamente às tarefas cognitivas. Não são convertidos em pontuação comportamental.</p>{data.cognitiveTimeline.length?<div className="group-list">{[...data.cognitiveTimeline].reverse().map(row=><article key={row.id}><b>{date(row.completedAt)} · {row.mode}</b><span>{row.accuracy}% · {row.correct}/{row.totalQuestions} acertos</span><small>{row.axes.map(axis=>axis.title+': '+axis.accuracy+'%').join(' · ')}</small></article>)}</div>:<p>Nenhuma avaliação cognitiva registrada.</p>}</section>
