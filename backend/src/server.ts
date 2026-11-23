@@ -422,7 +422,7 @@ async function getResearchAggregate(query:Record<string,unknown>){
   const to=parsed.data.to?new Date(parsed.data.to):new Date();
   if(from>to)throw Object.assign(new Error('Período inválido.'),{status:400});
   const rows=await prisma.instrumentAssessment.findMany({
-    where:{completedAt:{gte:from,lte:to},...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
+    where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
     select:{userId:true,institutionId:true,context:true,dimensions:true,institution:{select:{name:true,type:true,city:true,state:true}},completedAt:true}
   });
   const participants=new Set(rows.map(x=>x.userId)).size;
