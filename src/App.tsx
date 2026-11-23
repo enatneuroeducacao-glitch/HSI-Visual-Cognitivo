@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { auth, api } from './lib/api';
+import { auth, api, publicAccess } from './lib/api';
 import AdminPanel from './AdminPanel';
 import DothpAssessment from './DothpAssessment';
 import InstrumentHistory from './InstrumentHistory';
@@ -101,6 +101,8 @@ const formatTime = (seconds: number) => {
 function App() {
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [consentUpdating, setConsentUpdating] = useState(false);
+  const [consentFeedback, setConsentFeedback] = useState('');
   const [mode, setMode] = useState('full');
   const [studyCode, setStudyCode] = useState('');
   const [runQuestions, setRunQuestions] = useState<Question[]>([]);
@@ -417,6 +419,22 @@ function App() {
     setView('home');
   };
 
+  const togglePublicResearchConsent = async () => {
+    if (!user?.publicAccess || consentUpdating) return;
+    setConsentUpdating(true);
+    setConsentFeedback('');
+    try {
+      const nextValue = !Boolean(user.researchProfile?.researchConsent);
+      const response = await publicAccess.updateResearchConsent(nextValue);
+      setUser(response.data.user);
+      setConsentFeedback(nextValue ? 'Autorização de pesquisa ativada.' : 'Autorização de pesquisa retirada. Novos agregados deixarão de incluir suas aplicações públicas.');
+    } catch (error: any) {
+      setConsentFeedback(error?.response?.data?.error || 'Não foi possível atualizar sua autorização.');
+    } finally {
+      setConsentUpdating(false);
+    }
+  };
+
   if (authLoading)
     return (
       <main className="center-screen">
@@ -531,6 +549,11 @@ function App() {
               <div className="public-code-reminder">
                 <div><span>Seu código privado de participação — guarde para retomar em outro dispositivo</span><strong>{user.participantCode}</strong></div>
                 <button type="button" onClick={() => navigator.clipboard.writeText(user.participantCode)}>Copiar código</button>
+                <div className="public-consent-setting">
+                  <span>Uso das respostas em pesquisas ENAT: <strong>{user.researchProfile?.researchConsent ? 'autorizado' : 'não autorizado'}</strong></span>
+                  <button type="button" disabled={consentUpdating} onClick={togglePublicResearchConsent}>{consentUpdating ? 'Atualizando…' : user.researchProfile?.researchConsent ? 'Retirar autorização' : 'Autorizar pesquisa'}</button>
+                </div>
+                {consentFeedback && <small className="public-consent-feedback" role="status">{consentFeedback}</small>}
               </div>
             )}
             <div className="dothp-context">
