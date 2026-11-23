@@ -50,7 +50,19 @@ export default function PublicAccess({ onAuthenticated }: Props) {
     } finally { setBusy(false); }
   };
 
-  const handlePublicRegistration = async (event: React.FormEvent) => {
+  const requestReset = async () => {
+    const target = email.trim();
+    if (!target) { setError('Informe seu e-mail para solicitar a redefinição.'); return; }
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const response = await auth.requestPasswordReset(target);
+      setMessage(response.data.message || 'Se o endereço estiver cadastrado, você receberá instruções para redefinir a senha.');
+    } catch (err: any) {
+      setError(err?.response?.data?.error || 'Não foi possível solicitar a redefinição.');
+    } finally { setBusy(false); }
+  };
+
+  const handlePublicRegistration = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError(''); setMessage('');
     if (!privacyAccepted) { setError('É necessário confirmar a leitura do aviso de privacidade para continuar.'); setBusy(false); return; }
     try {
@@ -68,7 +80,7 @@ export default function PublicAccess({ onAuthenticated }: Props) {
     } finally { setBusy(false); }
   };
 
-  const handleResume = async (event: React.FormEvent) => {
+  const handleResume = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError('');
     try {
       const response = await publicAccess.resume(participantCode.trim());
@@ -120,6 +132,7 @@ export default function PublicAccess({ onAuthenticated }: Props) {
               <button className="primary full" type="submit" disabled={busy}>{busy ? 'Aguarde…' : mode === 'register' ? 'Criar minha conta' : 'Entrar na plataforma'}</button>
             </form>
             <button className="forgot-link" type="button" onClick={() => switchMode(mode === 'register' ? 'login' : 'register')}>{mode === 'register' ? 'Já tenho uma conta · Fazer login' : 'Criar conta com e-mail e senha'}</button>
+            {mode === 'login' && <button className="forgot-link" type="button" onClick={requestReset} disabled={busy}>Esqueci minha senha</button>}
           </>
         )}
 
