@@ -189,14 +189,40 @@ app.get('/api/admin/overview', authenticate, allow(UserRole.ADMIN), asyncRoute(a
   ]);
   res.json({generatedAt:new Date().toISOString(),system:{api:'operational',database:'connected'},counts:{users,activeUsers,participants,analysts,admins,groups,assessments,instrumentAssessments}});
 }));
+const institutionSchema=z.object({
+  name:z.string().trim().min(2).max(180),
+  type:z.enum(['SCHOOL','COMPANY','PUBLIC_AGENCY','RESEARCH_CENTER','OTHER']).default('OTHER'),
+  city:z.string().trim().min(2).max(100),
+  state:z.string().trim().length(2).transform(v=>v.toUpperCase()),
+  country:z.string().trim().length(2).default('BR'),
+});
+app.get('/api/institutions', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (_req,res) => {
+  const institutions=await prisma.institution.findMany({where:{active:true},include:{_count:{select:{groups:true,assessments:true}}},orderBy:[{state:'asc'},{city:'asc'},{name:'asc'}]});
+  res.json({institutions});
+}));
+app.post('/api/institutions', authenticate, allow(UserRole.ADMIN), asyncRoute(async (req,res) => {
+  const parsed=institutionSchema.safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Dados institucionais inválidos.',details:parsed.error.flatten()});
+  const institution=await prisma.institution.create({data:parsed.data});
+  await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'INSTITUTION_CREATE',targetType:'INSTITUTION',targetId:institution.id}});
+  res.status(201).json({institution});
+}));
+app.patch('/api/institutions/:id', authenticate, allow(UserRole.ADMIN), asyncRoute(async (req,res) => {
+  const parsed=institutionSchema.partial().extend({active:z.boolean().optional()}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Dados institucionais inválidos.'});
+  const institution=await prisma.institution.update({where:{id:String(req.params.id)},data:parsed.data});
+  await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'INSTITUTION_UPDATE',targetType:'INSTITUTION',targetId:institution.id}});
+  res.json({institution});
+}));
 app.get('/api/groups', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (_req,res) => {
-  const groups = await prisma.participantGroup.findMany({include:{_count:{select:{users:true}}},orderBy:{name:'asc'}});
+  const groups = await prisma.participantGroup.findMany({include:{institution:true,_count:{select:{users:true,assessments:true}}},orderBy:{name:'asc'}});
   res.json({groups});
 }));
 app.post('/api/groups', authenticate, allow(UserRole.ADMIN), asyncRoute(async (req,res) => {
-  const parsed=z.object({name:z.string().trim().min(2).max(100),description:z.string().max(500).optional()}).safeParse(req.body);
-  if(!parsed.success) return res.status(400).json({error:'Nome de grupo inválido.'});
+  const parsed=z.object({name:z.string().trim().min(2).max(100),description:z.string().max(500).optional(),institutionId:z.string().optional(),city:z.string().trim().min(2).max(100).optional(),state:z.string().trim().length(2).transform(v=>v.toUpperCase()).optional()}).safeParse(req.body);
+  if(!parsed.success) return res.status(400).json({error:'Dados do grupo inválidos.'});
   const group=await prisma.participantGroup.create({data:parsed.data});
+  await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'GROUP_CREATE',targetType:'GROUP',targetId:group.id}});
   res.status(201).json({group});
 }));
 
@@ -262,6 +288,8 @@ const instrumentResultSchema = z.object({
   instrument: z.literal('HSI-DOTH-P'),
   context: z.enum(['cotidiano','trabalho','educacao','familia','social','digital','transito','integrado']),
   answers: z.array(z.number().int().min(1).max(5)).length(25),
+  contextVersion: z.string().max(20).default('1.0'),
+  consentVersion: z.string().max(40).optional(),
 }).strict();
 
 app.get('/api/instrument-results', authenticate, asyncRoute(async (req,res) => {
@@ -279,6 +307,7 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
   const data = parsed.data;
   const existing = await prisma.instrumentAssessment.findUnique({ where: { id: data.id } });
   if (existing) return res.status(409).json({ error: 'Identificador de avaliação já utilizado.' });
+  const participant = await prisma.user.findUnique({where:{id:req.authUser!.id},select:{groupId:true,group:{select:{institutionId:true}}}});
   const scored = scoreDothp(data.answers);
   const result = await prisma.instrumentAssessment.create({
     data: {
@@ -286,6 +315,11 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
       userId: req.authUser!.id,
       instrument: data.instrument,
       context: data.context,
+      contextVersion: data.contextVersion,
+      groupId: participant?.groupId || null,
+      institutionId: participant?.group?.institutionId || null,
+      consentVersion: data.consentVersion || null,
+      consentedAt: data.consentVersion ? new Date() : null,
       completedAt: new Date(),
       answers: scored.answers as Prisma.InputJsonValue,
       dimensions: scored.dimensions as Prisma.InputJsonValue,
