@@ -3,6 +3,7 @@ import { auth, api } from './lib/api';
 import AdminPanel from './AdminPanel';
 import DothpAssessment from './DothpAssessment';
 import InstrumentHistory from './InstrumentHistory';
+import PublicAccess from './PublicAccess';
 
 const logoUrl = new URL('../assets/hsi-visual-cognitivo.webp', import.meta.url).href;
 
@@ -430,66 +431,7 @@ function App() {
         <p>Preparando ambiente seguro…</p>
       </main>
     );
-  if (!user)
-    return (
-      <main className="login-screen">
-        <div className="login-card">
-          <img className="login-brand-logo" src={logoUrl} alt="HSI Visual Cognitivo" />
-          <p className="eyebrow">ENAT · PESQUISA E DESENVOLVIMENTO</p>
-          <h1>HSI Visual Cognitivo</h1>
-          <p className="muted">
-            Plataforma independente de exercícios visuais para exploração de
-            habilidades cognitivas relacionadas à condução.
-          </p>
-          {authError && <div className="notice error">{authError}</div>}
-          <form className="login-form" onSubmit={async e => {
-            e.preventDefault();
-            setAuthError('');
-            setResetMessage('');
-            try {
-              if (registerMode) {
-                const created = await auth.register(registerName, loginEmail, loginPassword);
-                setUser(created);
-              } else {
-                await auth.signInWithPassword(loginEmail, loginPassword);
-                setUser(await auth.getUser());
-              }
-            } catch (error: any) {
-              setAuthError(error?.response?.data?.error || (registerMode ? 'Não foi possível criar sua conta.' : 'Não foi possível autenticar. Confira suas credenciais.'));
-            }
-          }}>
-            {registerMode && <>
-              <label htmlFor="register-name">Nome completo</label>
-              <input id="register-name" type="text" required minLength={2} maxLength={120} autoComplete="name" value={registerName} onChange={e => setRegisterName(e.target.value)} placeholder="Seu nome completo" />
-            </>}
-            <label htmlFor="login-email">E-mail</label>
-            <input id="login-email" type="email" required autoComplete="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="seu@email.com" />
-            <label htmlFor="login-password">Senha</label>
-            <input id="login-password" type="password" required minLength={registerMode ? 12 : 1} maxLength={200} autoComplete={registerMode ? 'new-password' : 'current-password'} value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder={registerMode ? 'Mínimo de 12 caracteres' : 'Sua senha'} />
-            <button className="primary full" type="submit">{registerMode ? 'Criar minha conta' : 'Entrar na plataforma'}</button>
-          </form>
-          <button className="forgot-link" onClick={() => { setRegisterMode(!registerMode); setAuthError(''); setResetMessage(''); setLoginPassword(''); }}>
-            {registerMode ? 'Já tenho uma conta · Fazer login' : 'Criar minha conta'}
-          </button>
-          {!registerMode && <button className="forgot-link" onClick={async () => {
-            const email = loginEmail.trim();
-            if (!email) { setAuthError('Informe seu e-mail para solicitar a redefinição.'); return; }
-            try {
-              const response = await auth.requestPasswordReset(email);
-              setResetMessage(response.data.message);
-              setAuthError('');
-            } catch { setAuthError('Não foi possível solicitar a redefinição.'); }
-          }}>Esqueci minha senha</button>}
-          {registerMode && <p className="legal-note">A conta criada terá perfil de participante. Utilize um e-mail ao qual você tenha acesso, pois ele será necessário para recuperar sua senha.</p>}
-          {resetMessage && <div className="notice success">{resetMessage}</div>}
-          <p className="legal-note">
-            Os resultados são indicadores experimentais de desempenho. Não
-            constituem diagnóstico psicológico, avaliação de aptidão ou
-            certificação para dirigir.
-          </p>
-        </div>
-      </main>
-    );
+  if (!user) return <PublicAccess onAuthenticated={setUser} />;
 
   return (
     <div className="app-shell">
@@ -563,7 +505,7 @@ function App() {
         </header>
 
         {view === 'admin' && (user.role === 'ADMIN' || user.role === 'ANALYST') && <AdminPanel role={user.role} />}
-        {view === 'dothp' && <DothpAssessment />}
+        {view === 'dothp' && <DothpAssessment participantData={user.publicAccess ? user.researchProfile : null} />}
 
         {view === 'home' && (
           <section className="content">
@@ -592,6 +534,12 @@ function App() {
               </div>
             </div>
 
+            {user.publicAccess && (
+              <div className="public-code-reminder">
+                <div><span>Seu código privado de participação — guarde para retomar em outro dispositivo</span><strong>{user.participantCode}</strong></div>
+                <button type="button" onClick={() => navigator.clipboard.writeText(user.participantCode)}>Copiar código</button>
+              </div>
+            )}
             <div className="dothp-context">
               <label htmlFor="cognitive-study-code">Código do estudo ou intervenção <small>(opcional)</small></label>
               <input id="cognitive-study-code" maxLength={80} value={studyCode} onChange={e => setStudyCode(e.target.value)} placeholder="Preencha somente se esta avaliação fizer parte de um estudo específico" />
