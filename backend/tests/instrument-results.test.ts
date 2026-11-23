@@ -55,3 +55,27 @@ test('não permite reutilizar o identificador de uma avaliação', async () => {
     .send({ id: suffix + '-result', instrument: 'HSI-DOTH-P', context: 'cotidiano', answers: Array(25).fill(3) });
   assert.equal(response.status, 409);
 });
+
+
+test('série longitudinal compara contextos e mantém instrumento cognitivo separado', async () => {
+  const auth = 'Bearer ' + token();
+  const submitted = await request(app).post('/api/instrument-results')
+    .set('Authorization', auth)
+    .send({ id: suffix + '-work', instrument: 'HSI-DOTH-P', context: 'trabalho', answers: Array(25).fill(4) });
+  assert.equal(submitted.status, 201);
+  const response = await request(app).get('/api/instrument-results/longitudinal').set('Authorization', auth);
+  assert.equal(response.status, 200);
+  assert.equal(response.body.methodology.scalesCombined, false);
+  assert.equal(response.body.totals.behavioralApplications >= 2, true);
+  assert.equal(response.body.contexts.some((item: any) => item.context === 'trabalho'), true);
+  assert.equal(Array.isArray(response.body.behavioralTimeline), true);
+  assert.equal(Array.isArray(response.body.cognitiveTimeline), true);
+  assert.equal(response.body.behavioralTimeline.every((item: any) => item.comparisonWithPreviousSameContext.length === 5), true);
+});
+
+test('série longitudinal exige autenticação e restringe os dados à própria conta', async () => {
+  assert.equal((await request(app).get('/api/instrument-results/longitudinal')).status, 401);
+  const response = await request(app).get('/api/instrument-results/longitudinal').set('Authorization', 'Bearer ' + token());
+  assert.equal(response.status, 200);
+  assert.equal(response.body.behavioralTimeline.every((item: any) => item.id.startsWith(suffix)), true);
+});
