@@ -49,6 +49,16 @@ export default function DothpAssessment(){
  const [saveError,setSaveError]=useState('');
  const [saved,setSaved]=useState(false);
  const [researchConsent,setResearchConsent]=useState(false);
+ const [birthDate,setBirthDate]=useState('');
+ const [sex,setSex]=useState('');
+ const [licenseCategory,setLicenseCategory]=useState('');
+ const [city,setCity]=useState('');
+ const [state,setState]=useState('');
+ const [institutionType,setInstitutionType]=useState('INDEPENDENT');
+ const [institutionName,setInstitutionName]=useState('');
+ const [groupSector,setGroupSector]=useState('');
+ const [profileError,setProfileError]=useState('');
+ const profileComplete=Boolean(birthDate&&sex&&city.trim()&&state.trim().length===2&&institutionType);
  const complete=Object.keys(answers).length===25;
  const results=useMemo(()=>dimensions.map(d=>{
    const indices=items.map((q,i)=>q[0]===d.id?i:-1).filter(i=>i>=0);
@@ -57,25 +67,40 @@ export default function DothpAssessment(){
    return {...d,mean,index:Math.round((mean-1)*25),answered:values.length};
  }),[answers]);
  const setAnswer=(i:number,v:number)=>{setAnswers(prev=>({...prev,[i]:v}));setShowResult(false)};
- const reset=()=>{setAnswers({});setShowResult(false);setSaveError('');setSaved(false);setResearchConsent(false)};
+ const reset=()=>{setAnswers({});setShowResult(false);setSaveError('');setSaved(false);setResearchConsent(false);setProfileError('')};
  const saveAndShowResult=async()=>{
   if(!complete||saving)return;
-  setSaving(true);setSaveError('');
+  if(!profileComplete){setProfileError('Preencha data de nascimento, sexo, município, UF e tipo de vínculo para continuar.');return;}
+  setSaving(true);setSaveError('');setProfileError('');
   try{
-   await api.post('/api/instrument-results',{id:crypto.randomUUID(),instrument:'HSI-DOTH-P',context,contextVersion:'1.1',...(researchConsent?{consentVersion:'ENAT-RESEARCH-1.0'}:{}),answers:items.map((_,i)=>answers[i])});
+   await api.post('/api/instrument-results',{id:crypto.randomUUID(),instrument:'HSI-DOTH-P',context,contextVersion:'1.1',...(researchConsent?{consentVersion:'ENAT-RESEARCH-1.0'}:{}),participantData:{birthDate,sex,licenseCategory:licenseCategory||null,city:city.trim(),state:state.trim().toUpperCase(),country:'BR',institutionType,institutionName:institutionName.trim()||null,groupSector:groupSector.trim()||null},answers:items.map((_,i)=>answers[i])});
    setSaved(true);setShowResult(true);
   }catch(error:any){setSaveError(error?.response?.data?.error||'Não foi possível registrar suas respostas. Verifique a conexão e tente novamente.');}
   finally{setSaving(false);}
  };
  return <section className="dothp-workspace">
   <header className="dothp-hero"><span className="eyebrow">INSTRUMENTO COMPORTAMENTAL · HSI-DOTH-P</span><h1>Comportamento em diferentes contextos da vida</h1><p>Uma autoavaliação estruturada sobre decisões, organização, tempo, humanização e padrões psicocomportamentais. Não é limitada ao trânsito.</p><div className="dothp-tags"><span>25 afirmações</span><span>5 dimensões</span><span>Escala Likert de 1 a 5</span><span>Versão piloto</span></div></header>
-  {!showResult?<><div className="dothp-context"><label htmlFor="dothp-context">Contexto que deseja considerar ao responder</label><select id="dothp-context" value={context} onChange={e=>setContext(e.target.value)}><option value="cotidiano">Vida cotidiana e relações pessoais</option><option value="trabalho">Trabalho e ambiente profissional</option><option value="educacao">Estudos e aprendizagem</option><option value="familia">Família e convivência</option><option value="social">Comunidade e participação social</option><option value="digital">Ambientes digitais</option><option value="transito">Mobilidade e trânsito</option><option value="integrado">Considerar diferentes contextos</option></select><p>Responda pensando em como costuma agir, e não em como acredita que deveria agir. Considere experiências recentes e representativas.</p></div>
+  {!showResult?<><section className="dothp-participant-data" aria-labelledby="dothp-participant-title">
+   <div className="dothp-participant-heading"><span className="eyebrow">IDENTIFICAÇÃO PARA PESQUISA</span><h2 id="dothp-participant-title">Dados do respondente</h2><p>Essas informações permitem análises territoriais e sociodemográficas. O nome da instituição é opcional e não é necessário ter cadastro prévio.</p></div>
+   <div className="dothp-profile-grid">
+    <label>Data de nascimento<input type="date" required max={new Date().toISOString().slice(0,10)} value={birthDate} onChange={e=>setBirthDate(e.target.value)}/></label>
+    <label>Sexo<select required value={sex} onChange={e=>setSex(e.target.value)}><option value="">Selecione</option><option value="M">M — Masculino</option><option value="F">F — Feminino</option></select></label>
+    <label>Categoria de habilitação <small>(opcional)</small><select value={licenseCategory} onChange={e=>setLicenseCategory(e.target.value)}><option value="">Não informar</option><option value="NONE">Não possui CNH</option><option value="ACC">ACC</option><option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option><option value="E">E</option><option value="AB">AB</option><option value="AC">AC</option><option value="AD">AD</option><option value="AE">AE</option></select></label>
+    <label>Município<input required maxLength={100} value={city} onChange={e=>setCity(e.target.value)} placeholder="Digite seu município"/></label>
+    <label>UF<select required value={state} onChange={e=>setState(e.target.value)}><option value="">Selecione</option>{['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf=><option key={uf} value={uf}>{uf}</option>)}</select></label>
+    <label>Tipo de instituição / vínculo<select required value={institutionType} onChange={e=>setInstitutionType(e.target.value)}><option value="INDEPENDENT">Independente / sem vínculo</option><option value="SCHOOL">Escola</option><option value="COMPANY">Empresa</option><option value="PUBLIC_AGENCY">Órgão público</option><option value="UNIVERSITY">Universidade</option><option value="RESEARCH_CENTER">Centro de pesquisa</option><option value="COMMUNITY">Comunidade / organização social</option><option value="OTHER">Outro</option></select></label>
+    {institutionType!=='INDEPENDENT'&&<label>Nome da instituição <small>(opcional)</small><input maxLength={180} value={institutionName} onChange={e=>setInstitutionName(e.target.value)} placeholder="Nome da escola, empresa ou instituição"/></label>}
+    {institutionType!=='INDEPENDENT'&&<label>Grupo ou setor <small>(opcional)</small><input maxLength={120} value={groupSector} onChange={e=>setGroupSector(e.target.value)} placeholder="Turma, departamento, setor…"/></label>}
+   </div>
+   {profileError&&<div className="dothp-save-error" role="alert">{profileError}</div>}
+   <p className="dothp-profile-privacy">Os dados pessoais são protegidos. Relatórios de pesquisa utilizam recortes agregados, com supressão de grupos com menos de cinco participantes.</p>
+  </section><div className="dothp-context"><label htmlFor="dothp-context">Contexto que deseja considerar ao responder</label><select id="dothp-context" value={context} onChange={e=>setContext(e.target.value)}><option value="cotidiano">Vida cotidiana e relações pessoais</option><option value="trabalho">Trabalho e ambiente profissional</option><option value="educacao">Estudos e aprendizagem</option><option value="familia">Família e convivência</option><option value="social">Comunidade e participação social</option><option value="digital">Ambientes digitais</option><option value="transito">Mobilidade e trânsito</option><option value="integrado">Considerar diferentes contextos</option></select><p>Responda pensando em como costuma agir, e não em como acredita que deveria agir. Considere experiências recentes e representativas.</p></div>
   {saveError&&<div className="dothp-save-error" role="alert">{saveError}</div>}
   <div className="dothp-progress"><div><strong>{Object.keys(answers).length} de 25 respondidas</strong><span>{Math.round(Object.keys(answers).length/25*100)}%</span></div><div className="dothp-track"><i style={{width:(Object.keys(answers).length/25*100)+'%'}}/></div></div>
   {dimensions.map((d,di)=><section className="dothp-dimension" key={d.id}><div className="dothp-dimension-head"><span>DIMENSÃO 0{di+1}</span><h2>{d.name}</h2><p>{d.subtitle}</p><p className="dothp-context-guidance"><strong>Foco contextual:</strong> {getDothpContextHint(context,d.id)}</p></div>
   {items.map((q,i)=>q[0]===d.id?<article className="dothp-question" key={i}><div className="dothp-question-title"><b>{String(i+1).padStart(2,'0')}</b><p>{getDothpContextQuestion(context,q[0],items.slice(0,i).filter(item=>item[0]===q[0]).length,q[1])}</p></div><div className="dothp-options">{scale.map((label,j)=><label className={answers[i]===j+1?'chosen':''} key={j}><input type="radio" name={'dothp-'+i} checked={answers[i]===j+1} onChange={()=>setAnswer(i,j+1)}/><span>{j+1}</span><small>{label}</small></label>)}</div></article>:null)}
   </section>)}
-  <label className="dothp-research-consent"><input type="checkbox" checked={researchConsent} onChange={e=>setResearchConsent(e.target.checked)}/><span><strong>Participação voluntária em pesquisas ENAT (opcional).</strong> Autorizo que minhas respostas sejam utilizadas em análises estatísticas e pesquisas, exclusivamente em formato agregado e anonimizado. Posso concluir a avaliação sem marcar esta opção.</span></label><div className="dothp-actions"><button className="secondary" onClick={reset}>Limpar respostas</button><button className="primary" disabled={!complete||saving} onClick={saveAndShowResult}>{saving?'Registrando respostas…':'Calcular perfil dimensional e salvar'}</button></div>
+  <label className="dothp-research-consent"><input type="checkbox" checked={researchConsent} onChange={e=>setResearchConsent(e.target.checked)}/><span><strong>Participação voluntária em pesquisas ENAT (opcional).</strong> Autorizo que minhas respostas sejam utilizadas em análises estatísticas e pesquisas, exclusivamente em formato agregado e anonimizado. Posso concluir a avaliação sem marcar esta opção.</span></label><div className="dothp-actions"><button className="secondary" onClick={reset}>Limpar respostas</button><button className="primary" disabled={!complete||!profileComplete||saving} onClick={saveAndShowResult}>{saving?'Registrando respostas…':'Calcular perfil dimensional e salvar'}</button></div>
   </>:<><section className="dothp-results"><span className="eyebrow">DEVOLUTIVA DESCRITIVA · {context.toUpperCase()}</span>{saved&&<div className="dothp-saved-notice">Avaliação registrada no histórico da sua conta.</div>}<h2>Panorama por dimensão</h2><p>Os resultados abaixo representam somente suas respostas nesta aplicação. Não existe nota geral nem classificação de aprovação.</p>
   {results.map(d=><article className="dothp-result" key={d.id}><div><h3>{d.name}</h3><strong>{d.index}/100</strong></div><div className="dothp-track"><i style={{width:d.index+'%'}}/></div><small>Média {d.mean.toFixed(2).replace('.',',')} de 5 · {d.answered} afirmações</small><p>{d.index<34?'Nesta aplicação, as respostas indicam um espaço possível para reflexão e desenvolvimento nesta dimensão.':d.index<67?'Nesta aplicação, as respostas sugerem aspectos relativamente presentes e outros que podem ser fortalecidos.':'Nesta aplicação, as respostas indicam maior frequência de comportamentos associados a esta dimensão.'}</p></article>)}
   <div className="dothp-notice"><strong>Limites metodológicos:</strong> instrumento em versão piloto, sem validação psicométrica estabelecida. As faixas são apenas descrições internas da aplicação, não normas populacionais. Não constitui diagnóstico, avaliação clínica, seleção profissional, avaliação de personalidade, aptidão ou decisão automatizada sobre pessoas. Um resultado isolado não define um indivíduo.</div>
