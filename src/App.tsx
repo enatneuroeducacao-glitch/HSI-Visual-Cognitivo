@@ -463,11 +463,11 @@ function App() {
             </div>
             <div>
               <strong>{user.name || 'Pesquisador'}</strong>
-              <small>{user.email || 'Conta autenticada'}</small>
+              <small>{user.publicAccess ? 'Acesso público · código privado' : user.email || 'Conta autenticada'}</small>
             </div>
           </div>
           <button className="logout" onClick={logout}>
-            Sair da conta
+            {user.publicAccess ? 'Encerrar sessão' : 'Sair da conta'}
           </button>
         </div>
       </aside>
