@@ -878,8 +878,8 @@ app.get('/api/admin/data-quality', authenticate, allow(UserRole.ADMIN,UserRole.A
   if(!Number.isFinite(from.getTime())||!Number.isFinite(to.getTime())||from>to)return res.status(400).json({error:'Período inválido.'});
   const userFilter={OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]};
   const [cognitive,behavioral]=await Promise.all([
-    prisma.assessmentResult.findMany({where:{completedAt:{gte:from,lte:to},user:userFilter},select:{userId:true,durationSeconds:true,totalQuestions:true,answerDetails:true,completedAt:true}}),
-    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:userFilter},select:{userId:true,answers:true,dimensions:true,completedAt:true}})
+    prisma.assessmentResult.findMany({where:{completedAt:{gte:from,lte:to},user:userFilter},select:{userId:true,durationSeconds:true,totalQuestions:true,answerDetails:true,completedAt:true,instrumentVersion:true,mode:true,accuracy:true}}),
+    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:userFilter},select:{userId:true,answers:true,dimensions:true,completedAt:true,context:true,contextVersion:true,instrumentVersion:true,state:true,city:true,institutionType:true}})
   ]);
   res.json(analyzeDataQuality(cognitive,behavioral,5));
 }));
