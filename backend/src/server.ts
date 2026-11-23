@@ -206,6 +206,26 @@ app.post('/api/public/session', asyncRoute(async (req, res) => {
   return res.json({ token: publicSessionToken(user.id), expiresIn: 31536000, participantCode: user.participantCode, user: publicUser(user as AuthUser) });
 }));
 
+
+app.patch('/api/public/research-consent', authenticate, asyncRoute(async (req, res) => {
+  if (!req.authUser!.publicAccess) return res.status(403).json({ error: 'Esta operação está disponível somente para participantes públicos.' });
+  const parsed = z.object({ researchConsent: z.boolean() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Informe uma opção válida de consentimento.' });
+  const enabled = parsed.data.researchConsent;
+  const user = await prisma.user.update({
+    where: { id: req.authUser!.id },
+    data: {
+      researchConsentVersion: enabled ? 'ENAT-RESEARCH-1.0' : null,
+      researchConsentedAt: enabled ? new Date() : null
+    }
+  });
+  await prisma.auditLog.create({ data: {
+    actorId: user.id, action: enabled ? 'PUBLIC_RESEARCH_CONSENT_GRANTED' : 'PUBLIC_RESEARCH_CONSENT_WITHDRAWN',
+    targetType: 'USER', targetId: user.id, metadata: { researchConsent: enabled }
+  }});
+  return res.json({ user: publicUser(user as AuthUser) });
+}));
+
 app.get('/api/auth/me', authenticate, (req, res) => res.json({ user: publicUser(req.authUser!) }));
 
 app.post('/api/auth/forgot-password', asyncRoute(async (req, res) => {
@@ -602,7 +622,7 @@ async function getResearchAggregate(query:Record<string,unknown>){
   const to=parsed.data.to?new Date(parsed.data.to):new Date();
   if(from>to)throw Object.assign(new Error('Período inválido.'),{status:400});
   const rows=await prisma.instrumentAssessment.findMany({
-    where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
+    where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:{OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]},...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
     select:{userId:true,institutionId:true,city:true,state:true,context:true,dimensions:true,institutionType:true,institutionName:true,groupSector:true,institution:{select:{name:true,type:true,city:true,state:true}},completedAt:true}
   });
   const participants=new Set(rows.map(x=>x.userId)).size;
