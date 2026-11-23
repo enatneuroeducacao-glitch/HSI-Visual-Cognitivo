@@ -694,7 +694,7 @@ app.get('/api/admin/national-analytics', authenticate, allow(UserRole.ADMIN,User
           if(a&&answer.correct===true&&seconds>=15)a.slowCorrect++;
         }
       }else{
-        const c=contexts.get(row.context)||{context:row.context,applications:0,users:new Set<string>()};c.applications++;c.users.add(row.userId);contexts.set(row.context,c);
+        const c=contexts.get(row.context)||{context:row.context,applications:0,users:new Set<string>(),dimensions:new Map<string,any>()};c.applications++;c.users.add(row.userId);for(const raw of row.dimensions as Array<Record<string,unknown>>){const id=String(raw.id||'unknown');const d=c.dimensions.get(id)||{name:String(raw.name||id),sum:0,count:0};d.sum+=Number(raw.score||0);d.count++;c.dimensions.set(id,d);}contexts.set(row.context,c);
         const values=(row.answers as Array<Record<string,unknown>>).map(a=>Number(a.scoredResponse||0)).filter(v=>v>=1&&v<=5);
         const counts=[1,2,3,4,5].map(v=>values.filter(x=>x===v).length);
         if(values.length===25&&new Set(values).size===1)quality.uniformResponseApplications++;
@@ -734,7 +734,7 @@ app.get('/api/admin/national-analytics', authenticate, allow(UserRole.ADMIN,User
       monthly:suppressed?[]:monthly,states:suppressed?[]:groupRows('state'),cities:suppressed?[]:groupRows('city'),institutions:suppressed?[]:groupRows('institution'),
       axes:suppressed?[]:[...axes.values()].map(a=>({id:a.id,title:a.title,correct:a.correct,total:a.total,accuracy:a.total?Math.round(a.correct/a.total*100):0,averageSeconds:a.attempts?Number((a.seconds/a.attempts).toFixed(1)):0,fastErrors:a.fastErrors,slowCorrect:a.slowCorrect})),
       dimensions:suppressed?[]:[...dimensions.values()].map(d=>({id:d.id,name:d.name,score:d.count?Math.round(d.sum/d.count):0,applications:d.count,low:d.low,medium:d.medium,high:d.high})),
-      contexts:suppressed?[]:[...contexts.values()].filter(c=>c.users.size>=minimumGroupSize).map(c=>({context:c.context,applications:c.applications,participants:c.users.size})),
+      contexts:suppressed?[]:[...contexts.values()].filter(c=>c.users.size>=minimumGroupSize).map(c=>({context:c.context,applications:c.applications,participants:c.users.size,dimensions:[...c.dimensions.entries()].map(([id,d])=>({id,name:d.name,score:Math.round(d.sum/d.count)}))})),
       likert:suppressed?[]:likert.map((count,index)=>({value:index+1,count})),
       quality:suppressed?{uniformResponseApplications:0,concentratedResponseApplications:0}:quality,
       responseTimes:suppressed?{under3:0,from3to5:0,from6to10:0,over10:0}:responseTimes
