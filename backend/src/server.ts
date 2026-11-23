@@ -578,6 +578,7 @@ app.get('/api/research/export.csv', authenticate, allow(UserRole.ADMIN,UserRole.
   const rows:string[][]=[['tipo','codigo','dimensao','pontuacao_media','aplicacoes','participantes']];
   for(const d of aggregate.dimensions)rows.push(['geral','TODOS',d.name,String(d.score),String(d.applications),String(aggregate.totals.participants)]);
   for(const g of aggregate.geography)for(const d of g.dimensions)rows.push(['municipio',g.state+'-'+g.city,d.dimensionId,String(d.score),String(g.count),String(g.participants)]);
+  for(const s of aggregate.states)for(const d of s.dimensions)rows.push(['estado',s.state,d.dimensionId,String(d.score),String(s.count),String(s.participants)]);
   for(const o of aggregate.institutions)for(const d of o.dimensions)rows.push(['instituicao',o.id,d.dimensionId,String(d.score),String(o.count),String(o.participants)]);
   const csv=rows.map(row=>row.map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(';')).join('\\n');
   res.setHeader('Content-Type','text/csv; charset=utf-8');
