@@ -72,7 +72,12 @@ model AssessmentResult {
   axes             Json
   answerDetails    Json
   createdAt        DateTime @default(now())
+  applicationNumber Int @default(1)
+  applicationType   String @default("BASELINE")
+  studyCode         String?
+  instrumentVersion String @default("1.0")
 
+  @@unique([userId, applicationNumber])
   @@index([userId, completedAt])
   @@index([completedAt])
   @@index([participantCode])
@@ -128,7 +133,12 @@ model InstrumentAssessment {
   institutionType String?
   institutionName String?
   groupSector     String?
+  applicationNumber Int @default(1)
+  applicationType   String @default("BASELINE")
+  studyCode         String?
+  instrumentVersion String @default("1.0")
 
+  @@unique([userId, instrument, applicationNumber])
   @@index([userId, completedAt])
   @@index([instrument, completedAt])
   @@index([context, completedAt])
