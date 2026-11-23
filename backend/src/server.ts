@@ -151,7 +151,7 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
 
 
 const publicParticipantSchema = z.object({
-  birthDate: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/),
+  birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   sex: z.enum(['M', 'F']),
   licenseCategory: z.enum(['NONE','ACC','A','B','C','D','E','AB','AC','AD','AE']).nullable().optional(),
   city: z.string().trim().min(2).max(100),
