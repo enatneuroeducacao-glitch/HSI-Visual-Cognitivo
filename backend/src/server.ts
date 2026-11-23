@@ -189,13 +189,25 @@ app.patch('/api/users/:id', authenticate, allow(UserRole.ADMIN), asyncRoute(asyn
   res.json({user});
 }));
 app.get('/api/admin/overview', authenticate, allow(UserRole.ADMIN), asyncRoute(async (_req,res) => {
-  const [users,activeUsers,participants,analysts,admins,groups,assessments,instrumentAssessments] = await Promise.all([
+  const [users,activeUsers,participants,analysts,admins,groups,assessments,instrumentAssessments,cognitiveRows,behavioralRows] = await Promise.all([
     prisma.user.count(), prisma.user.count({where:{status:UserStatus.ACTIVE}}),
     prisma.user.count({where:{role:UserRole.PARTICIPANT}}), prisma.user.count({where:{role:UserRole.ANALYST}}),
     prisma.user.count({where:{role:UserRole.ADMIN}}), prisma.participantGroup.count(),
-    prisma.assessmentResult.count(), prisma.instrumentAssessment.count()
+    prisma.assessmentResult.count(), prisma.instrumentAssessment.count(),
+    prisma.assessmentResult.findMany({select:{userId:true,applicationNumber:true,applicationType:true}}),
+    prisma.instrumentAssessment.findMany({select:{userId:true,applicationNumber:true,applicationType:true}})
   ]);
-  res.json({generatedAt:new Date().toISOString(),system:{api:'operational',database:'connected'},counts:{users,activeUsers,participants,analysts,admins,groups,assessments,instrumentAssessments}});
+  const allApplications=[...cognitiveRows,...behavioralRows];
+  const returningParticipants=new Set(allApplications.filter(row=>row.applicationNumber>1).map(row=>row.userId));
+  const repeatApplications=allApplications.filter(row=>row.applicationNumber>1).length;
+  const experimentalApplications=allApplications.filter(row=>row.applicationType==='EXPERIMENTAL').length;
+  const baselineApplications=allApplications.filter(row=>row.applicationType==='BASELINE').length;
+  res.json({
+    generatedAt:new Date().toISOString(),
+    system:{api:'operational',database:'connected'},
+    counts:{users,activeUsers,participants,analysts,admins,groups,assessments,instrumentAssessments},
+    longitudinal:{repeatApplications,returningParticipants:returningParticipants.size,experimentalApplications,baselineApplications}
+  });
 }));
 const institutionSchema=z.object({
   name:z.string().trim().min(2).max(180),
@@ -287,7 +299,7 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
   });
   const result = await withSerializableRetry(() => prisma.$transaction(async tx => {
     const existing = await tx.assessmentResult.findUnique({where:{id:d.id}});
-    if (existing) throw Object.assign(new Error('Identificador de resultado já utilizado.'), { statusCode: 409 });
+    if (existing) throw Object.assign(new Error('Identificador de resultado já utilizado.'), { status: 409 });
     const applicationNumber = await tx.assessmentResult.count({where:{userId:req.authUser!.id}}) + 1;
     const studyCode = d.studyCode?.trim() || null;
     const created = await tx.assessmentResult.create({data:{
@@ -375,7 +387,7 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
   const scored = scoreDothp(data.answers, data.context);
   const result = await withSerializableRetry(() => prisma.$transaction(async tx => {
     const existing = await tx.instrumentAssessment.findUnique({where:{id:data.id}});
-    if(existing) throw Object.assign(new Error('Identificador de avaliação já utilizado.'), {statusCode:409});
+    if(existing) throw Object.assign(new Error('Identificador de avaliação já utilizado.'), {status:409});
     const applicationNumber = await tx.instrumentAssessment.count({where:{userId:req.authUser!.id,instrument:data.instrument}}) + 1;
     const studyCode = data.studyCode?.trim() || null;
     const created = await tx.instrumentAssessment.create({
