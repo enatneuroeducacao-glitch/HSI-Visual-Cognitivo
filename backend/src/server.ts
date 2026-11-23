@@ -651,6 +651,8 @@ app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN,UserRole.ANALY
   });
 }));
 
+
+app.get('/api/admin/national-analytics', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res) => { const from = typeof req.query.from === 'string' ? new Date(req.query.from) : new Date(Date.now()-365*86400000); const to = typeof req.query.to === 'string' ? new Date(req.query.to) : new Date(); if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from > to) return res.status(400).json({error:'Período inválido.'}); const userFilter = {OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]}; const [cognitiveRows,behavioralRows] = await Promise.all([prisma.assessmentResult.findMany({where:{completedAt:{gte:from,lte:to},user:userFilter},select:{userId:true,completedAt:true,totalQuestions:true,correct:true,axes:true,answerDetails:true,user:{select:{city:true,state:true,institutionName:true,institutionType:true}}}}),prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:userFilter},select:{userId:true,completedAt:true,context:true,dimensions:true,answers:true,city:true,state:true,institutionName:true,institutionType:true,institution:{select:{name:true,type:true,city:true,state:true}}}})]); res.json({generatedAt:new Date().toISOString(),cognitiveApplications:cognitiveRows.length,behavioralApplications:behavioralRows.length}); }));
 const researchQuerySchema=z.object({
   from:z.string().datetime().optional(),
   to:z.string().datetime().optional(),
