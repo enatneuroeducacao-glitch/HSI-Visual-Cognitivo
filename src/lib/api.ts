@@ -1,10 +1,18 @@
 const API_URL = (import.meta as any).env.VITE_API_URL || '';
-let token: string | null = sessionStorage.getItem('hsi_access_token');
+let token: string | null = localStorage.getItem('hsi_public_token') || sessionStorage.getItem('hsi_access_token');
 
 export function setToken(value: string | null) {
   token = value;
+  localStorage.removeItem('hsi_public_token');
   if (value) sessionStorage.setItem('hsi_access_token', value);
   else sessionStorage.removeItem('hsi_access_token');
+}
+
+export function setPersistentPublicToken(value: string | null) {
+  token = value;
+  sessionStorage.removeItem('hsi_access_token');
+  if (value) localStorage.setItem('hsi_public_token', value);
+  else localStorage.removeItem('hsi_public_token');
 }
 
 async function request(path: string, options: RequestInit = {}) {
@@ -41,7 +49,7 @@ export const auth = {
   async getUser() {
     if (!token) return null;
     try { return (await api.get('/api/auth/me')).data.user; }
-    catch { setToken(null); return null; }
+    catch { setToken(null); setPersistentPublicToken(null); return null; }
   },
   async register(name: string, email: string, password: string) {
     const response = await api.post('/api/auth/register', { name, email, password });
@@ -53,6 +61,20 @@ export const auth = {
     setToken(response.data.token);
     return response.data.user;
   },
-  async signOut() { setToken(null); },
+  async signOut() { setToken(null); setPersistentPublicToken(null); },
   async requestPasswordReset(email: string) { return api.post('/api/auth/forgot-password', { email }); }
+};
+
+
+export const publicAccess = {
+  async register(profile: Record<string, unknown>) {
+    const response = await api.post('/api/public/participants', profile);
+    setPersistentPublicToken(response.data.token);
+    return response.data;
+  },
+  async resume(participantCode: string) {
+    const response = await api.post('/api/public/session', { participantCode });
+    setPersistentPublicToken(response.data.token);
+    return response.data;
+  }
 };
