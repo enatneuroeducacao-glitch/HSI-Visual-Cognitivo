@@ -98,7 +98,7 @@ export default function AdminPanel({role}:Props) {
    {role==='ADMIN'&&<button className={tab==='participants'?'selected':''} onClick={()=>setTab('participants')}>Participantes</button>}
    {role==='ADMIN'&&<button className={tab==='groups'?'selected':''} onClick={()=>setTab('groups')}>Grupos</button>}
    <button className={tab==='reports'?'selected':''} onClick={()=>setTab('reports')}>Relatórios</button>
-   <button className={tab==='research'?'selected':''} onClick={()=>setTab('research')}>Centro de pesquisas</button>
+   {(role==='ADMIN'||role==='ANALYST')&&<button className={tab==='research'?'selected':''} onClick={()=>setTab('research')}>Centro de pesquisas</button>}
   </nav>
   {notice&&<div className="notice success">{notice}</div>}{error&&<div className="notice error">{error}</div>}
 

@@ -467,28 +467,11 @@ async function getResearchAggregate(query:Record<string,unknown>){
     }
   }
   const dimensionRows=[...dims.entries()].map(([id,v])=>({id,name:v.name,score:Math.round(v.sum/v.count),applications:v.count}));
-  type AggregateGroup = { users: Set<string>; scores: Map<string, { sum: number; count: number }> };
-  const safeGroups = <T extends AggregateGroup>(
-    map: Map<string, T>
-  ): Array<Omit<T, 'users' | 'scores'> & {
-    id: string;
-    participants: number;
-    dimensions: Array<{ dimensionId: string; score: number }>;
-  }> => [...map.entries()]
-    .filter(([, value]) => value.users.size >= minimumGroupSize)
-    .map(([id, value]) => {
-      const { users, scores, ...attributes } = value;
-      return {
-        id,
-        ...attributes,
-        participants: users.size,
-        dimensions: [...scores.entries()].map(([dimensionId, score]) => ({
-          dimensionId,
-          score: Math.round(score.sum / score.count),
-        })),
-      };
-    });
-  return {privacy:{suppressed:false,minimumGroupSize,distinctParticipants:participants},generatedAt:new Date().toISOString(),period:{from:from.toISOString(),to:to.toISOString()},totals:{assessments:rows.length,participants},dimensions:dimensionRows,timeline:[...timeline.values()].filter(v=>v.users.size>=minimumGroupSize).sort((a,b)=>a.period.localeCompare(b.period)).map(v=>({period:v.period,assessments:v.count,participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))})),contexts:[...contexts.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([context,v])=>({context,assessments:v.count,participants:v.users.size})),geography:safeGroups(geo),institutions:safeGroups(orgs)};
+  const geographyRows=[...geo.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([id,v])=>({id,state:v.state,city:v.city,count:v.count,participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))}));
+  const institutionRows=[...orgs.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([id,v])=>({id,name:v.name,type:v.type,city:v.city,state:v.state,count:v.count,participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))}));
+  const timelineRows=[...timeline.values()].filter(v=>v.users.size>=minimumGroupSize).sort((a,b)=>a.period.localeCompare(b.period)).map(v=>({period:v.period,assessments:v.count,participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))}));
+  const contextRows=[...contexts.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([context,v])=>({context,assessments:v.count,participants:v.users.size}));
+  return {privacy:{suppressed:false,minimumGroupSize,distinctParticipants:participants},generatedAt:new Date().toISOString(),period:{from:from.toISOString(),to:to.toISOString()},totals:{assessments:rows.length,participants},dimensions:dimensionRows,timeline:timelineRows,contexts:contextRows,geography:geographyRows,institutions:institutionRows};
 }
 app.get('/api/research/aggregate', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res)=>{
   const aggregate=await getResearchAggregate(req.query as Record<string,unknown>);
@@ -500,7 +483,7 @@ app.get('/api/research/export.csv', authenticate, allow(UserRole.ADMIN,UserRole.
   const rows:string[][]=[['tipo','codigo','dimensao','pontuacao_media','aplicacoes','participantes']];
   for(const d of aggregate.dimensions)rows.push(['geral','TODOS',d.name,String(d.score),String(d.applications),String(aggregate.totals.participants)]);
   for(const g of aggregate.geography)for(const d of g.dimensions)rows.push(['municipio',g.state+'-'+g.city,d.dimensionId,String(d.score),String(g.count),String(g.participants)]);
-  for(const o of aggregate.institutions)for(const d of o.dimensions)rows.push(['instituicao',o.id,d.dimensionId,String(d.score),String(o.count),String(o.participants)]);
+  for(const o of aggregate.institutions)for(const d of o.dimensions)rows.push(['instituicao',o.name,d.dimensionId,String(d.score),String(o.count),String(o.participants)]);
   const csv=rows.map(row=>row.map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(';')).join('\\n');
   res.setHeader('Content-Type','text/csv; charset=utf-8');
   res.setHeader('Content-Disposition','attachment; filename="enat-relatorio-agregado.csv"');
