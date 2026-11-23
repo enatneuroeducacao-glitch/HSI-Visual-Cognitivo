@@ -683,8 +683,8 @@ app.get('/api/admin/national-analytics', authenticate, allow(UserRole.ADMIN,User
       if(kind==='cognitive'){
         for(const raw of row.axes as Array<Record<string,unknown>>){
           const id=String(raw.axisId||'unknown');
-          const a=axes.get(id)||{id,title:String(raw.title||id),correct:0,total:0,seconds:0,attempts:0,fastErrors:0,slowCorrect:0};
-          a.correct+=Number(raw.correct||0);a.total+=Number(raw.total||0);a.seconds+=Number(raw.averageSeconds||0);a.attempts++;axes.set(id,a);
+          const a=axes.get(id)||{id,title:String(raw.title||id),correct:0,total:0,seconds:0,attempts:0,fastErrors:0,slowCorrect:0,scores:[] as number[]};
+          a.correct+=Number(raw.correct||0);a.total+=Number(raw.total||0);a.seconds+=Number(raw.averageSeconds||0);a.attempts++;a.scores.push(Number(raw.total||0)?Math.round(Number(raw.correct||0)/Number(raw.total||0)*100):0);axes.set(id,a);
         }
         for(const answer of row.answerDetails as Array<Record<string,unknown>>){
           const seconds=Number(answer.seconds||0);
@@ -694,7 +694,7 @@ app.get('/api/admin/national-analytics', authenticate, allow(UserRole.ADMIN,User
           if(a&&answer.correct===true&&seconds>=15)a.slowCorrect++;
         }
       }else{
-        const c=contexts.get(row.context)||{context:row.context,applications:0,users:new Set<string>()};c.applications++;c.users.add(row.userId);contexts.set(row.context,c);
+        const c=contexts.get(row.context)||{context:row.context,applications:0,users:new Set<string>(),dimensions:new Map<string,any>()};c.applications++;c.users.add(row.userId);for(const raw of row.dimensions as Array<Record<string,unknown>>){const id=String(raw.id||'unknown');const d=c.dimensions.get(id)||{name:String(raw.name||id),sum:0,count:0};d.sum+=Number(raw.score||0);d.count++;c.dimensions.set(id,d);}contexts.set(row.context,c);
         const values=(row.answers as Array<Record<string,unknown>>).map(a=>Number(a.scoredResponse||0)).filter(v=>v>=1&&v<=5);
         const counts=[1,2,3,4,5].map(v=>values.filter(x=>x===v).length);
         if(values.length===25&&new Set(values).size===1)quality.uniformResponseApplications++;
@@ -732,9 +732,9 @@ app.get('/api/admin/national-analytics', authenticate, allow(UserRole.ADMIN,User
       privacy:{suppressed,minimumGroupSize,distinctParticipants:users.size},
       summary:suppressed?{participants:0,applications:0,correct:0,totalQuestions:0,accuracy:null}:{participants:users.size,applications:rows.length,correct:kind==='cognitive'?correct:null,totalQuestions:kind==='cognitive'?total:null,accuracy:kind==='cognitive'&&total?Math.round(correct/total*100):null},
       monthly:suppressed?[]:monthly,states:suppressed?[]:groupRows('state'),cities:suppressed?[]:groupRows('city'),institutions:suppressed?[]:groupRows('institution'),
-      axes:suppressed?[]:[...axes.values()].map(a=>({id:a.id,title:a.title,correct:a.correct,total:a.total,accuracy:a.total?Math.round(a.correct/a.total*100):0,averageSeconds:a.attempts?Number((a.seconds/a.attempts).toFixed(1)):0,fastErrors:a.fastErrors,slowCorrect:a.slowCorrect})),
+      axes:suppressed?[]:[...axes.values()].map(a=>{const mean=a.scores.length?a.scores.reduce((sum:number,value:number)=>sum+value,0)/a.scores.length:0;const variation=a.scores.length?Math.sqrt(a.scores.reduce((sum:number,value:number)=>sum+Math.pow(value-mean,2),0)/a.scores.length):0;return{id:a.id,title:a.title,correct:a.correct,total:a.total,accuracy:a.total?Math.round(a.correct/a.total*100):0,averageSeconds:a.attempts?Number((a.seconds/a.attempts).toFixed(1)):0,variation:Number(variation.toFixed(1)),fastErrors:a.fastErrors,slowCorrect:a.slowCorrect};}),
       dimensions:suppressed?[]:[...dimensions.values()].map(d=>({id:d.id,name:d.name,score:d.count?Math.round(d.sum/d.count):0,applications:d.count,low:d.low,medium:d.medium,high:d.high})),
-      contexts:suppressed?[]:[...contexts.values()].filter(c=>c.users.size>=minimumGroupSize).map(c=>({context:c.context,applications:c.applications,participants:c.users.size})),
+      contexts:suppressed?[]:[...contexts.values()].filter(c=>c.users.size>=minimumGroupSize).map(c=>({context:c.context,applications:c.applications,participants:c.users.size,dimensions:[...c.dimensions.entries()].map(([id,d])=>({id,name:d.name,score:Math.round(d.sum/d.count)}))})),
       likert:suppressed?[]:likert.map((count,index)=>({value:index+1,count})),
       quality:suppressed?{uniformResponseApplications:0,concentratedResponseApplications:0}:quality,
       responseTimes:suppressed?{under3:0,from3to5:0,from6to10:0,over10:0}:responseTimes
