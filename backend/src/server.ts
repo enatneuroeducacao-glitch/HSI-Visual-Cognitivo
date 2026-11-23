@@ -343,8 +343,9 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
   if (existing) return res.status(409).json({ error: 'Identificador de avaliação já utilizado.' });
   const participant = await prisma.user.findUnique({where:{id:req.authUser!.id},select:{groupId:true,group:{select:{institutionId:true,city:true,state:true,institution:{select:{city:true,state:true}}}}}});
   const profile = data.participantData;
-  if(profile && new Date(profile.birthDate).toISOString().slice(0,10)!==profile.birthDate)return res.status(400).json({error:'Data de nascimento inválida.'});
-  if(profile && new Date(profile.birthDate)>new Date())return res.status(400).json({error:'A data de nascimento não pode estar no futuro.'});
+  const birthDateValue = profile ? new Date(profile.birthDate+'T00:00:00.000Z') : null;
+  if(profile && (!birthDateValue || Number.isNaN(birthDateValue.getTime()) || birthDateValue.toISOString().slice(0,10)!==profile.birthDate))return res.status(400).json({error:'Data de nascimento inválida.'});
+  if(birthDateValue && birthDateValue>new Date())return res.status(400).json({error:'A data de nascimento não pode estar no futuro.'});
   const linkedInstitution = profile?.institutionName && profile.institutionType!=='INDEPENDENT' && ['SCHOOL','COMPANY','PUBLIC_AGENCY','RESEARCH_CENTER','OTHER'].includes(profile.institutionType)
     ? await prisma.institution.findFirst({where:{active:true,name:{equals:profile.institutionName,mode:'insensitive'},city:{equals:profile.city,mode:'insensitive'},state:profile.state,type:profile.institutionType as any},select:{id:true}})
     : null;
@@ -360,7 +361,7 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
       institutionId: linkedInstitution?.id || (profile ? null : participant?.group?.institutionId || null),
       city: profile?.city || participant?.group?.city || participant?.group?.institution?.city || null,
       state: profile?.state || participant?.group?.state || participant?.group?.institution?.state || null,
-      birthDate: profile ? new Date(profile.birthDate+'T00:00:00.000Z') : null,
+      birthDate: birthDateValue,
       sex: profile?.sex || null,
       licenseCategory: profile?.licenseCategory || null,
       institutionType: profile?.institutionType || null,
@@ -471,7 +472,7 @@ async function getResearchAggregate(query:Record<string,unknown>){
   if(from>to)throw Object.assign(new Error('Período inválido.'),{status:400});
   const rows=await prisma.instrumentAssessment.findMany({
     where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
-    select:{userId:true,institutionId:true,city:true,state:true,context:true,dimensions:true,institution:{select:{name:true,type:true,city:true,state:true}},completedAt:true}
+    select:{userId:true,institutionId:true,city:true,state:true,context:true,dimensions:true,institutionType:true,institutionName:true,groupSector:true,institution:{select:{name:true,type:true,city:true,state:true}},completedAt:true}
   });
   const participants=new Set(rows.map(x=>x.userId)).size;
   const minimumGroupSize=5;
@@ -497,14 +498,17 @@ async function getResearchAggregate(query:Record<string,unknown>){
         const ds=g.scores.get(id)||{sum:0,count:0};ds.sum+=score;ds.count++;g.scores.set(id,ds);
       }
       geo.set(key,g);
-      if(place&&row.institutionId){
-        const o=orgs.get(row.institutionId)||{name:place.name,type:place.type,city:place.city,state:place.state,count:0,users:new Set<string>(),scores:new Map()};
+      const declaredName=String(row.institutionName||place?.name||'').trim();
+      const declaredType=String(row.institutionType||place?.type||'OTHER');
+      if(declaredName && declaredType!=='INDEPENDENT'){
+        const orgKey=row.institutionId||[row.state,row.city,declaredType,declaredName.normalize('NFKC').toLocaleLowerCase('pt-BR')].join('|');
+        const o=orgs.get(orgKey)||{name:declaredName,type:declaredType,city:row.city,state:row.state,count:0,users:new Set<string>(),scores:new Map()};
         o.count++;o.users.add(row.userId);
         for(const raw of row.dimensions as Array<Record<string,unknown>>){
           const id=String(raw.id||'unknown'),score=Number(raw.score||0);
           const os=o.scores.get(id)||{sum:0,count:0};os.sum+=score;os.count++;o.scores.set(id,os);
         }
-        orgs.set(row.institutionId,o);
+        orgs.set(orgKey,o);
       }
     }
     for(const raw of row.dimensions as Array<Record<string,unknown>>){
