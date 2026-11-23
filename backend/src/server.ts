@@ -53,8 +53,15 @@ const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173').spl
 app.use(cors({ origin(origin, cb) { if (!origin || allowedOrigins.includes(origin)) return cb(null, true); cb(new Error('Origem não autorizada')); }, credentials: false }));
 app.use(express.json({ limit: '1mb' }));
 app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false }));
+app.use('/api/public', rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: 'draft-7', legacyHeaders: false }));
 
-type AuthUser = { id: string; name: string; email: string; role: UserRole; status: UserStatus; participantCode: string | null; groupId: string | null };
+type AuthUser = {
+  id: string; name: string; email: string; role: UserRole; status: UserStatus;
+  participantCode: string | null; groupId: string | null; publicAccess?: boolean;
+  birthDate?: Date | null; sex?: string | null; city?: string | null; state?: string | null;
+  licenseCategory?: string | null; institutionType?: string | null; institutionName?: string | null;
+  groupSector?: string | null; researchConsentVersion?: string | null; researchConsentedAt?: Date | null;
+};
 declare global { namespace Express { interface Request { authUser?: AuthUser } } }
 
 const asyncRoute = (fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>) =>
@@ -67,7 +74,17 @@ async function withSerializableRetry<T>(work: () => Promise<T>): Promise<T> {
   }
   throw new Error('Não foi possível reservar a sequência da avaliação.');
 }
-const publicUser = (u: AuthUser) => ({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, participantCode: u.participantCode, groupId: u.groupId });
+const publicUser = (u: AuthUser) => ({
+  id: u.id, name: u.publicAccess ? 'Participante público' : u.name,
+  email: u.publicAccess ? null : u.email, role: u.role, status: u.status,
+  participantCode: u.participantCode, groupId: u.groupId, publicAccess: Boolean(u.publicAccess),
+  researchProfile: u.publicAccess ? {
+    birthDate: u.birthDate ? u.birthDate.toISOString().slice(0, 10) : null,
+    sex: u.sex, licenseCategory: u.licenseCategory, city: u.city, state: u.state,
+    institutionType: u.institutionType, institutionName: u.institutionName, groupSector: u.groupSector,
+    researchConsent: Boolean(u.researchConsentedAt), researchConsentVersion: u.researchConsentVersion
+  } : null
+});
 
 const authenticate = asyncRoute(async (req, res, next) => {
   const raw = req.headers.authorization?.replace(/^Bearer\s+/i, '');
@@ -130,6 +147,63 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
     if (error?.code === 'P2002') return res.status(409).json({ error: 'Este e-mail já possui uma conta. Entre ou utilize a recuperação de senha.' });
     throw error;
   }
+}));
+
+
+const publicParticipantSchema = z.object({
+  birthDate: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/),
+  sex: z.enum(['M', 'F']),
+  licenseCategory: z.enum(['NONE','ACC','A','B','C','D','E','AB','AC','AD','AE']).nullable().optional(),
+  city: z.string().trim().min(2).max(100),
+  state: z.enum(['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO']),
+  institutionType: z.enum(['INDEPENDENT','SCHOOL','COMPANY','PUBLIC_AGENCY','UNIVERSITY','RESEARCH_CENTER','COMMUNITY','OTHER']),
+  institutionName: z.string().trim().max(180).nullable().optional(),
+  groupSector: z.string().trim().max(120).nullable().optional(),
+  privacyNoticeVersion: z.literal('ENAT-PRIVACY-1.0'),
+  researchConsent: z.boolean().default(false)
+}).strict();
+
+function publicSessionToken(userId: string) {
+  return jwt.sign({ access: 'public-participant' }, JWT_SECRET!, { subject: userId, expiresIn: '365d', issuer: 'hsi-visual-cognitivo' });
+}
+
+app.post('/api/public/participants', asyncRoute(async (req, res) => {
+  const parsed = publicParticipantSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Confira os dados obrigatórios e a confirmação do aviso de privacidade.', details: parsed.error.flatten() });
+  const data = parsed.data;
+  const birthDate = new Date(data.birthDate + 'T00:00:00.000Z');
+  if (!Number.isFinite(birthDate.getTime()) || birthDate.toISOString().slice(0, 10) !== data.birthDate || birthDate > new Date()) {
+    return res.status(400).json({ error: 'Informe uma data de nascimento válida.' });
+  }
+  if (data.institutionType === 'INDEPENDENT' && data.institutionName?.trim()) {
+    return res.status(400).json({ error: 'O nome da instituição só pode ser informado quando houver vínculo institucional.' });
+  }
+  const participantCode = 'ENAT-PUB-' + crypto.randomBytes(24).toString('base64url');
+  const email = 'public-' + crypto.randomUUID() + '@anonymous.hsi.invalid';
+  const passwordHash = await bcrypt.hash(crypto.randomBytes(48).toString('base64url'), 12);
+  const user = await prisma.user.create({ data: {
+    name: 'Participante público', email, passwordHash, role: UserRole.PARTICIPANT, status: UserStatus.ACTIVE,
+    participantCode, publicAccess: true, birthDate, sex: data.sex, city: data.city, state: data.state,
+    licenseCategory: data.licenseCategory || null, institutionType: data.institutionType,
+    institutionName: data.institutionName?.trim() || null, groupSector: data.groupSector?.trim() || null,
+    privacyNoticeVersion: data.privacyNoticeVersion, privacyAcknowledgedAt: new Date(),
+    researchConsentVersion: data.researchConsent ? 'ENAT-RESEARCH-1.0' : null,
+    researchConsentedAt: data.researchConsent ? new Date() : null
+  }});
+  await prisma.auditLog.create({ data: {
+    actorId: user.id, action: 'PUBLIC_PARTICIPANT_CREATE', targetType: 'USER', targetId: user.id,
+    metadata: { publicAccess: true, researchConsent: data.researchConsent, privacyNoticeVersion: data.privacyNoticeVersion }
+  }});
+  return res.status(201).json({ token: publicSessionToken(user.id), expiresIn: 31536000, participantCode, user: publicUser(user as AuthUser) });
+}));
+
+app.post('/api/public/session', asyncRoute(async (req, res) => {
+  const parsed = z.object({ participantCode: z.string().trim().min(30).max(100) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Informe seu código privado de participante.' });
+  const user = await prisma.user.findUnique({ where: { participantCode: parsed.data.participantCode } });
+  if (!user || !user.publicAccess || user.status !== UserStatus.ACTIVE) return res.status(401).json({ error: 'Código de participante inválido. Confira os caracteres e tente novamente.' });
+  await prisma.auditLog.create({ data: { actorId: user.id, action: 'PUBLIC_PARTICIPANT_RESUME', targetType: 'USER', targetId: user.id }});
+  return res.json({ token: publicSessionToken(user.id), expiresIn: 31536000, participantCode: user.participantCode, user: publicUser(user as AuthUser) });
 }));
 
 app.get('/api/auth/me', authenticate, (req, res) => res.json({ user: publicUser(req.authUser!) }));
