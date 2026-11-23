@@ -695,11 +695,11 @@ app.get('/api/admin/national-analytics', authenticate, allow(UserRole.ADMIN,User
         }
       }else{
         const c=contexts.get(row.context)||{context:row.context,applications:0,users:new Set<string>(),dimensions:new Map<string,any>()};c.applications++;c.users.add(row.userId);for(const raw of row.dimensions as Array<Record<string,unknown>>){const id=String(raw.id||'unknown');const d=c.dimensions.get(id)||{name:String(raw.name||id),sum:0,count:0};d.sum+=Number(raw.score||0);d.count++;c.dimensions.set(id,d);}contexts.set(row.context,c);
-        const values=(row.answers as Array<Record<string,unknown>>).map(a=>Number(a.scoredResponse||0)).filter(v=>v>=1&&v<=5);
+        const values=(row.answers as Array<Record<string,unknown>>).map(a=>Number(a.response||0)).filter(v=>v>=1&&v<=5);
         const counts=[1,2,3,4,5].map(v=>values.filter(x=>x===v).length);
         if(values.length===25&&new Set(values).size===1)quality.uniformResponseApplications++;
         if(values.length&&Math.max(...counts)/values.length>=0.8)quality.concentratedResponseApplications++;
-        for(const a of row.answers as Array<Record<string,unknown>>){const v=Number(a.scoredResponse||0);if(v>=1&&v<=5)likert[v-1]++;}
+        for(const a of row.answers as Array<Record<string,unknown>>){const v=Number(a.response||0);if(v>=1&&v<=5)likert[v-1]++;}
         for(const raw of row.dimensions as Array<Record<string,unknown>>){
           const id=String(raw.id||'unknown');const d=dimensions.get(id)||{id,name:String(raw.name||id),sum:0,count:0,low:0,medium:0,high:0};
           const score=Number(raw.score||0);d.sum+=score;d.count++;if(score<34)d.low++;else if(score<67)d.medium++;else d.high++;dimensions.set(id,d);
