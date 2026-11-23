@@ -521,7 +521,7 @@ function App() {
         </header>
 
         {view === 'admin' && (user.role === 'ADMIN' || user.role === 'ANALYST') && <AdminPanel role={user.role} />}
-        {view === 'dothp' && <DothpAssessment participantData={user.publicAccess ? user.researchProfile : null} />}
+        {view === 'dothp' && <DothpAssessment participantData={user.researchProfile} />}
 
         {view === 'home' && (
           <section className="content">
@@ -550,6 +550,7 @@ function App() {
               </div>
             </div>
 
+            {saveError && <div className="notice error" role="alert">{saveError}</div>}
             {user.publicAccess && (
               <div className="public-code-reminder">
                 <div><span>Seu código privado de participação — guarde para retomar em outro dispositivo</span><strong>{user.participantCode}</strong></div>
