@@ -446,15 +446,19 @@ async function getResearchAggregate(query:Record<string,unknown>){
       const key=row.state+'|'+row.city;
       const g=geo.get(key)||{state:row.state,city:row.city,count:0,users:new Set<string>(),scores:new Map()};
       g.count++;g.users.add(row.userId);
-      if(place&&row.institutionId){
-      const o=orgs.get(row.institutionId)||{name:place.name,type:place.type,city:place.city,state:place.state,count:0,users:new Set<string>(),scores:new Map()};
-      o.count++;o.users.add(row.userId);
       for(const raw of row.dimensions as Array<Record<string,unknown>>){
         const id=String(raw.id||'unknown'),score=Number(raw.score||0);
         const ds=g.scores.get(id)||{sum:0,count:0};ds.sum+=score;ds.count++;g.scores.set(id,ds);
-        const os=o.scores.get(id)||{sum:0,count:0};os.sum+=score;os.count++;o.scores.set(id,os);
       }
-      geo.set(key,g);orgs.set(row.institutionId,o);
+      geo.set(key,g);
+      if(place&&row.institutionId){
+        const o=orgs.get(row.institutionId)||{name:place.name,type:place.type,city:place.city,state:place.state,count:0,users:new Set<string>(),scores:new Map()};
+        o.count++;o.users.add(row.userId);
+        for(const raw of row.dimensions as Array<Record<string,unknown>>){
+          const id=String(raw.id||'unknown'),score=Number(raw.score||0);
+          const os=o.scores.get(id)||{sum:0,count:0};os.sum+=score;os.count++;o.scores.set(id,os);
+        }
+        orgs.set(row.institutionId,o);
       }
     }
     for(const raw of row.dimensions as Array<Record<string,unknown>>){
@@ -502,6 +506,7 @@ app.post('/api/advisor', authenticate, asyncRoute(async (req, res) => {
 }));
 
 app.use((err: unknown,_req:Request,res:Response,_next:NextFunction) => {
+  if (err && typeof err === 'object' && 'status' in err && typeof err.status === 'number') return res.status(err.status).json({error:err instanceof Error?err.message:'Solicitação inválida.'});
   if (err instanceof Error && err.message === 'INVALID_ANSWER') return res.status(400).json({error:'Resposta inválida ou questão não reconhecida.'});
   console.error(err);
   if (err && typeof err === 'object' && 'code' in err && err.code === 'P2002') return res.status(409).json({error:'Já existe um registro com esses dados.'});
