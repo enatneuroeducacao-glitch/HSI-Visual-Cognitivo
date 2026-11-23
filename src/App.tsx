@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import logoUrl from '../assets/hsi-visual-cognitivo.webp';
 import { auth, api } from './lib/api';
 import AdminPanel from './AdminPanel';
 import DothpAssessment from './DothpAssessment';
 import InstrumentHistory from './InstrumentHistory';
+
+const logoUrl = new URL('../assets/hsi-visual-cognitivo.webp', import.meta.url).href;
 
 type Axis = {
   id: string;
