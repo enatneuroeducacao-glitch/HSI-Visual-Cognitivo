@@ -452,7 +452,7 @@ async function getResearchAggregate(query:Record<string,unknown>){
   });
   const participants=new Set(rows.map(x=>x.userId)).size;
   const minimumGroupSize=5;
-  if(participants<minimumGroupSize)return {privacy:{suppressed:true,minimumGroupSize,distinctParticipants:participants},generatedAt:new Date().toISOString(),totals:{assessments:0,participants:0},dimensions:[],timeline:[],contexts:[],geography:[],institutions:[]};
+  if(participants<minimumGroupSize)return {privacy:{suppressed:true,minimumGroupSize,distinctParticipants:participants},generatedAt:new Date().toISOString(),totals:{assessments:0,participants:0},dimensions:[],timeline:[],contexts:[],geography:[],states:[],institutions:[]};
   const dims=new Map<string,{name:string;sum:number;count:number}>();
   const contexts=new Map<string,{count:number;users:Set<string>}>();
   const geo=new Map<string,{state:string;city:string;count:number;users:Set<string>;scores:Map<string,{sum:number;count:number}>}>();
