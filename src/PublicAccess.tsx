@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { auth, publicAccess } from './lib/api';
 
 const logoUrl = new URL('../assets/hsi-visual-cognitivo.webp', import.meta.url).href;
@@ -34,7 +34,7 @@ export default function PublicAccess({ onAuthenticated }: Props) {
     setMode(next); setError(''); setMessage(''); setPassword(''); setCopied(false);
   };
 
-  const handleAccount = async (event: React.FormEvent) => {
+  const handleAccount = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError(''); setMessage('');
     try {
       if (mode === 'register') {
