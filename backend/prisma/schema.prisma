@@ -78,6 +78,7 @@ model AssessmentResult {
   instrumentVersion String @default("1.0")
 
   @@unique([userId, applicationNumber])
+  @@index([applicationType, completedAt])
   @@index([userId, completedAt])
   @@index([completedAt])
   @@index([participantCode])
@@ -139,6 +140,7 @@ model InstrumentAssessment {
   instrumentVersion String @default("1.0")
 
   @@unique([userId, instrument, applicationNumber])
+  @@index([applicationType, completedAt])
   @@index([userId, completedAt])
   @@index([instrument, completedAt])
   @@index([context, completedAt])
