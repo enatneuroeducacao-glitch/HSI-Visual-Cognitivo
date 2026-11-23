@@ -307,7 +307,7 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
   const data = parsed.data;
   const existing = await prisma.instrumentAssessment.findUnique({ where: { id: data.id } });
   if (existing) return res.status(409).json({ error: 'Identificador de avaliação já utilizado.' });
-  const participant = await prisma.user.findUnique({where:{id:req.authUser!.id},select:{groupId:true,group:{select:{institutionId:true}}}});
+  const participant = await prisma.user.findUnique({where:{id:req.authUser!.id},select:{groupId:true,group:{select:{institutionId:true,city:true,state:true,institution:{select:{city:true,state:true}}}}}});
   const scored = scoreDothp(data.answers, data.context);
   const result = await prisma.instrumentAssessment.create({
     data: {
@@ -318,6 +318,8 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
       contextVersion: data.contextVersion,
       groupId: participant?.groupId || null,
       institutionId: participant?.group?.institutionId || null,
+      city: participant?.group?.city || participant?.group?.institution?.city || null,
+      state: participant?.group?.state || participant?.group?.institution?.state || null,
       consentVersion: data.consentVersion || null,
       consentedAt: data.consentVersion ? new Date() : null,
       completedAt: new Date(),
@@ -423,7 +425,7 @@ async function getResearchAggregate(query:Record<string,unknown>){
   if(from>to)throw Object.assign(new Error('Período inválido.'),{status:400});
   const rows=await prisma.instrumentAssessment.findMany({
     where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
-    select:{userId:true,institutionId:true,context:true,dimensions:true,institution:{select:{name:true,type:true,city:true,state:true}},completedAt:true}
+    select:{userId:true,institutionId:true,city:true,state:true,context:true,dimensions:true,institution:{select:{name:true,type:true,city:true,state:true}},completedAt:true}
   });
   const participants=new Set(rows.map(x=>x.userId)).size;
   const minimumGroupSize=5;
@@ -440,18 +442,20 @@ async function getResearchAggregate(query:Record<string,unknown>){
     timeline.set(period,month);
     const ctx=contexts.get(row.context)||{count:0,users:new Set<string>()};ctx.count++;ctx.users.add(row.userId);contexts.set(row.context,ctx);
     const place=row.institution;
-    if(place){
-      const key=place.state+'|'+place.city;
-      const g=geo.get(key)||{state:place.state,city:place.city,count:0,users:new Set<string>(),scores:new Map()};
+    if(row.state&&row.city){
+      const key=row.state+'|'+row.city;
+      const g=geo.get(key)||{state:row.state,city:row.city,count:0,users:new Set<string>(),scores:new Map()};
       g.count++;g.users.add(row.userId);
-      const o=orgs.get(row.institutionId!)||{name:place.name,type:place.type,city:place.city,state:place.state,count:0,users:new Set<string>(),scores:new Map()};
+      if(place&&row.institutionId){
+      const o=orgs.get(row.institutionId)||{name:place.name,type:place.type,city:place.city,state:place.state,count:0,users:new Set<string>(),scores:new Map()};
       o.count++;o.users.add(row.userId);
       for(const raw of row.dimensions as Array<Record<string,unknown>>){
         const id=String(raw.id||'unknown'),score=Number(raw.score||0);
         const ds=g.scores.get(id)||{sum:0,count:0};ds.sum+=score;ds.count++;g.scores.set(id,ds);
         const os=o.scores.get(id)||{sum:0,count:0};os.sum+=score;os.count++;o.scores.set(id,os);
       }
-      geo.set(key,g);orgs.set(row.institutionId!,o);
+      geo.set(key,g);orgs.set(row.institutionId,o);
+      }
     }
     for(const raw of row.dimensions as Array<Record<string,unknown>>){
       const id=String(raw.id||'unknown'),item=dims.get(id)||{name:String(raw.name||id),sum:0,count:0};
