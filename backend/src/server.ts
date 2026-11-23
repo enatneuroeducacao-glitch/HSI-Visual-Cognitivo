@@ -189,24 +189,31 @@ app.patch('/api/users/:id', authenticate, allow(UserRole.ADMIN), asyncRoute(asyn
   res.json({user});
 }));
 app.get('/api/admin/overview', authenticate, allow(UserRole.ADMIN), asyncRoute(async (_req,res) => {
-  const [users,activeUsers,participants,analysts,admins,groups,assessments,instrumentAssessments,cognitiveRows,behavioralRows] = await Promise.all([
+  const [users,activeUsers,participants,analysts,admins,groups,assessments,instrumentAssessments,cognitiveGroups,behavioralGroups,experimentalCognitive,experimentalBehavioral,baselineCognitive,baselineBehavioral] = await Promise.all([
     prisma.user.count(), prisma.user.count({where:{status:UserStatus.ACTIVE}}),
     prisma.user.count({where:{role:UserRole.PARTICIPANT}}), prisma.user.count({where:{role:UserRole.ANALYST}}),
     prisma.user.count({where:{role:UserRole.ADMIN}}), prisma.participantGroup.count(),
     prisma.assessmentResult.count(), prisma.instrumentAssessment.count(),
-    prisma.assessmentResult.findMany({select:{userId:true,applicationNumber:true,applicationType:true}}),
-    prisma.instrumentAssessment.findMany({select:{userId:true,applicationNumber:true,applicationType:true}})
+    prisma.assessmentResult.groupBy({by:['userId'],_count:{_all:true}}),
+    prisma.instrumentAssessment.groupBy({by:['userId'],_count:{_all:true}}),
+    prisma.assessmentResult.count({where:{applicationType:'EXPERIMENTAL'}}),
+    prisma.instrumentAssessment.count({where:{applicationType:'EXPERIMENTAL'}}),
+    prisma.assessmentResult.count({where:{applicationType:'BASELINE'}}),
+    prisma.instrumentAssessment.count({where:{applicationType:'BASELINE'}})
   ]);
-  const allApplications=[...cognitiveRows,...behavioralRows];
-  const returningParticipants=new Set(allApplications.filter(row=>row.applicationNumber>1).map(row=>row.userId));
-  const repeatApplications=allApplications.filter(row=>row.applicationNumber>1).length;
-  const experimentalApplications=allApplications.filter(row=>row.applicationType==='EXPERIMENTAL').length;
-  const baselineApplications=allApplications.filter(row=>row.applicationType==='BASELINE').length;
+  const returningParticipants=new Set([
+    ...cognitiveGroups.filter(row=>row._count._all>1).map(row=>row.userId),
+    ...behavioralGroups.filter(row=>row._count._all>1).map(row=>row.userId)
+  ]);
+  const repeatApplications=[
+    ...cognitiveGroups.map(row=>Math.max(0,row._count._all-1)),
+    ...behavioralGroups.map(row=>Math.max(0,row._count._all-1))
+  ].reduce((sum,count)=>sum+count,0);
   res.json({
     generatedAt:new Date().toISOString(),
     system:{api:'operational',database:'connected'},
     counts:{users,activeUsers,participants,analysts,admins,groups,assessments,instrumentAssessments},
-    longitudinal:{repeatApplications,returningParticipants:returningParticipants.size,experimentalApplications,baselineApplications}
+    longitudinal:{repeatApplications,returningParticipants:returningParticipants.size,experimentalApplications:experimentalCognitive+experimentalBehavioral,baselineApplications:baselineCognitive+baselineBehavioral}
   });
 }));
 const institutionSchema=z.object({
