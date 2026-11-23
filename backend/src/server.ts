@@ -409,6 +409,71 @@ app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN,UserRole.ANALY
   });
 }));
 
+const researchQuerySchema=z.object({
+  from:z.string().datetime().optional(),
+  to:z.string().datetime().optional(),
+  institutionId:z.string().optional(),
+  context:z.enum(['cotidiano','trabalho','educacao','familia','social','digital','transito','integrado']).optional(),
+});
+async function getResearchAggregate(query:Record<string,unknown>){
+  const parsed=researchQuerySchema.safeParse(query);
+  if(!parsed.success)throw Object.assign(new Error('Filtros de pesquisa inválidos.'),{status:400});
+  const from=parsed.data.from?new Date(parsed.data.from):new Date(Date.now()-365*86400000);
+  const to=parsed.data.to?new Date(parsed.data.to):new Date();
+  if(from>to)throw Object.assign(new Error('Período inválido.'),{status:400});
+  const rows=await prisma.instrumentAssessment.findMany({
+    where:{completedAt:{gte:from,lte:to},...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
+    select:{userId:true,institutionId:true,context:true,dimensions:true,institution:{select:{name:true,type:true,city:true,state:true}},completedAt:true}
+  });
+  const participants=new Set(rows.map(x=>x.userId)).size;
+  const minimumGroupSize=5;
+  if(participants<minimumGroupSize)return {privacy:{suppressed:true,minimumGroupSize,distinctParticipants:participants},generatedAt:new Date().toISOString(),totals:{assessments:0,participants:0},dimensions:[],contexts:[],geography:[],institutions:[]};
+  const dims=new Map<string,{name:string;sum:number;count:number}>();
+  const contexts=new Map<string,{count:number;users:Set<string>}>();
+  const geo=new Map<string,{state:string;city:string;count:number;users:Set<string>;scores:Map<string,{sum:number;count:number}>}>();
+  const orgs=new Map<string,{name:string;type:string;city:string;state:string;count:number;users:Set<string>;scores:Map<string,{sum:number;count:number}>}>();
+  for(const row of rows){
+    const ctx=contexts.get(row.context)||{count:0,users:new Set<string>()};ctx.count++;ctx.users.add(row.userId);contexts.set(row.context,ctx);
+    const place=row.institution;
+    if(place){
+      const key=place.state+'|'+place.city;
+      const g=geo.get(key)||{state:place.state,city:place.city,count:0,users:new Set<string>(),scores:new Map()};
+      g.count++;g.users.add(row.userId);
+      const o=orgs.get(row.institutionId!)||{name:place.name,type:place.type,city:place.city,state:place.state,count:0,users:new Set<string>(),scores:new Map()};
+      o.count++;o.users.add(row.userId);
+      for(const raw of row.dimensions as Array<Record<string,unknown>>){
+        const id=String(raw.id||'unknown'),score=Number(raw.score||0);
+        const ds=g.scores.get(id)||{sum:0,count:0};ds.sum+=score;ds.count++;g.scores.set(id,ds);
+        const os=o.scores.get(id)||{sum:0,count:0};os.sum+=score;os.count++;o.scores.set(id,os);
+      }
+      geo.set(key,g);orgs.set(row.institutionId!,o);
+    }
+    for(const raw of row.dimensions as Array<Record<string,unknown>>){
+      const id=String(raw.id||'unknown'),item=dims.get(id)||{name:String(raw.name||id),sum:0,count:0};
+      item.sum+=Number(raw.score||0);item.count++;dims.set(id,item);
+    }
+  }
+  const dimensionRows=[...dims.entries()].map(([id,v])=>({id,name:v.name,score:Math.round(v.sum/v.count),applications:v.count}));
+  const safeGroups=(map:Map<string,any>)=>[...map.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([id,v])=>({id,...Object.fromEntries(Object.entries(v).filter(([k])=>k!=='users'&&k!=='scores')),participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))}));
+  return {privacy:{suppressed:false,minimumGroupSize,distinctParticipants:participants},generatedAt:new Date().toISOString(),period:{from:from.toISOString(),to:to.toISOString()},totals:{assessments:rows.length,participants},dimensions:dimensionRows,contexts:[...contexts.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([context,v])=>({context,assessments:v.count,participants:v.users.size})),geography:safeGroups(geo),institutions:safeGroups(orgs)};
+}
+app.get('/api/research/aggregate', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res)=>{
+  const aggregate=await getResearchAggregate(req.query as Record<string,unknown>);
+  res.json(aggregate);
+}));
+app.get('/api/research/export.csv', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res)=>{
+  const aggregate=await getResearchAggregate(req.query as Record<string,unknown>);
+  if(aggregate.privacy.suppressed)return res.status(403).json({error:'Exportação suprimida: são necessários pelo menos cinco participantes distintos.',privacy:aggregate.privacy});
+  const rows:string[][]=[['tipo','codigo','dimensao','pontuacao_media','aplicacoes','participantes']];
+  for(const d of aggregate.dimensions)rows.push(['geral','TODOS',d.name,String(d.score),String(d.applications),String(aggregate.totals.participants)]);
+  for(const g of aggregate.geography)for(const d of g.dimensions)rows.push(['municipio',g.state+'-'+g.city,d.dimensionId,String(d.score),String(g.count),String(g.participants)]);
+  for(const o of aggregate.institutions)for(const d of o.dimensions)rows.push(['instituicao',o.id,d.dimensionId,String(d.score),String(o.count),String(o.participants)]);
+  const csv=rows.map(row=>row.map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(';')).join('\\n');
+  res.setHeader('Content-Type','text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition','attachment; filename="enat-relatorio-agregado.csv"');
+  res.send('\\uFEFF'+csv);
+}));
+
 app.post('/api/advisor', authenticate, asyncRoute(async (req, res) => {
   const parsed = z.object({ resultIds: z.array(z.string().min(8).max(100)).min(1).max(6) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Informe resultados válidos para orientação.' });
