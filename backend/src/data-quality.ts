@@ -5,7 +5,7 @@ export type QualityFlag = {
 };
 type CognitiveRow = { userId:string; durationSeconds:number; totalQuestions:number; answerDetails:unknown; completedAt:Date };
 type BehavioralRow = { userId:string; answers:unknown; dimensions:unknown; completedAt:Date };
-const numeric = (value:unknown): number[] => Array.isArray(value) ? value.map(v => typeof v==='number'?v:typeof v==='object'&&v!==null&&'response' in v?Number((v as any).response):NaN).filter(Number.isFinite) : [];
+const numeric = (value:unknown): number[] => Array.isArray(value) ? value.map(v => typeof v==='number'?v:typeof v==='object'&&v!==null&&'response' in v?Number((v as any).response):typeof v==='object'&&v!==null&&'selected' in v?Number((v as any).selected):NaN).filter(Number.isFinite) : [];
 const mean=(xs:number[])=>xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:0;
 const variance=(xs:number[])=>xs.length?xs.reduce((s,x)=>s+(x-mean(xs))**2,0)/xs.length:0;
 const median=(xs:number[])=>{if(!xs.length)return 0;const a=[...xs].sort((x,y)=>x-y);const m=Math.floor(a.length/2);return a.length%2?a[m]:(a[m-1]+a[m])/2;};
@@ -16,7 +16,6 @@ export function analyzeDataQuality(cognitive:CognitiveRow[],behavioral:Behaviora
  const seconds=cAnswers.map(a=>Number(a?.seconds)).filter(Number.isFinite).filter(x=>x>=0);
  const underTwo=seconds.filter(x=>x<2).length, underThree=seconds.filter(x=>x<3).length;
  const repeatedCognitive=cognitive.filter(r=>{const a=Array.isArray(r.answerDetails)?r.answerDetails as any[]:[];return a.length>=10&&a.every(x=>Number(x?.selected)===Number(a[0]?.selected));}).length;
- const cognitiveVariability=cognitive.filter(r=>{const a=numeric(r.answerDetails as any[] .map?.(()=>0));return a.length>1&&variance(a)<0.15;}).length;
  const behavioralRows=behavioral.map(r=>({row:r,values:numeric(r.answers)}));
  const uniformBehavioral=behavioralRows.filter(x=>{const v=x.values;return v.length>=20&&(new Set(v).size===1||Math.max(...[1,2,3,4,5].map(k=>v.filter(x=>x===k).length))/v.length>=0.9);}).length;
  const lowVarianceBehavioral=behavioralRows.filter(x=>x.values.length>=20&&variance(x.values)<0.25).length;
