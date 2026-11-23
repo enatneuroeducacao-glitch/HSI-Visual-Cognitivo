@@ -1,7 +1,8 @@
 import React from 'react';
-import logoUrl from '../assets/hsi-visual-cognitivo.webp';
 import { createRoot } from 'react-dom/client';
 import './public.css';
+
+const logoUrl = new URL('../assets/hsi-visual-cognitivo.webp', import.meta.url).href;
 
 const axes = [
   ['01','Raciocínio lógico','Organização de relações, regras e resolução de problemas.'],
