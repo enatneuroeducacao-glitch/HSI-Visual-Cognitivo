@@ -101,12 +101,6 @@ const formatTime = (seconds: number) => {
 function App() {
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [authError, setAuthError] = useState('');
-  const [loginEmail, setLoginEmail] = useState('');
-  const [registerName, setRegisterName] = useState('');
-  const [registerMode, setRegisterMode] = useState(false);
-  const [loginPassword, setLoginPassword] = useState('');
-  const [resetMessage, setResetMessage] = useState('');
   const [mode, setMode] = useState('full');
   const [studyCode, setStudyCode] = useState('');
   const [runQuestions, setRunQuestions] = useState<Question[]>([]);
@@ -142,7 +136,6 @@ function App() {
         setAuthLoading(false);
       })
       .catch(() => {
-        setAuthError('Não foi possível restaurar a sessão. Tente novamente.');
         setAuthLoading(false);
       });
   }, []);
