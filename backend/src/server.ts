@@ -189,14 +189,40 @@ app.get('/api/admin/overview', authenticate, allow(UserRole.ADMIN), asyncRoute(a
   ]);
   res.json({generatedAt:new Date().toISOString(),system:{api:'operational',database:'connected'},counts:{users,activeUsers,participants,analysts,admins,groups,assessments,instrumentAssessments}});
 }));
+const institutionSchema=z.object({
+  name:z.string().trim().min(2).max(180),
+  type:z.enum(['SCHOOL','COMPANY','PUBLIC_AGENCY','RESEARCH_CENTER','OTHER']).default('OTHER'),
+  city:z.string().trim().min(2).max(100),
+  state:z.string().trim().length(2).transform(v=>v.toUpperCase()),
+  country:z.string().trim().length(2).default('BR'),
+});
+app.get('/api/institutions', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (_req,res) => {
+  const institutions=await prisma.institution.findMany({where:{active:true},include:{_count:{select:{groups:true,assessments:true}}},orderBy:[{state:'asc'},{city:'asc'},{name:'asc'}]});
+  res.json({institutions});
+}));
+app.post('/api/institutions', authenticate, allow(UserRole.ADMIN), asyncRoute(async (req,res) => {
+  const parsed=institutionSchema.safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Dados institucionais inválidos.',details:parsed.error.flatten()});
+  const institution=await prisma.institution.create({data:parsed.data});
+  await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'INSTITUTION_CREATE',targetType:'INSTITUTION',targetId:institution.id}});
+  res.status(201).json({institution});
+}));
+app.patch('/api/institutions/:id', authenticate, allow(UserRole.ADMIN), asyncRoute(async (req,res) => {
+  const parsed=institutionSchema.partial().extend({active:z.boolean().optional()}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Dados institucionais inválidos.'});
+  const institution=await prisma.institution.update({where:{id:String(req.params.id)},data:parsed.data});
+  await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'INSTITUTION_UPDATE',targetType:'INSTITUTION',targetId:institution.id}});
+  res.json({institution});
+}));
 app.get('/api/groups', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (_req,res) => {
-  const groups = await prisma.participantGroup.findMany({include:{_count:{select:{users:true}}},orderBy:{name:'asc'}});
+  const groups = await prisma.participantGroup.findMany({include:{institution:true,_count:{select:{users:true,assessments:true}}},orderBy:{name:'asc'}});
   res.json({groups});
 }));
 app.post('/api/groups', authenticate, allow(UserRole.ADMIN), asyncRoute(async (req,res) => {
-  const parsed=z.object({name:z.string().trim().min(2).max(100),description:z.string().max(500).optional()}).safeParse(req.body);
-  if(!parsed.success) return res.status(400).json({error:'Nome de grupo inválido.'});
+  const parsed=z.object({name:z.string().trim().min(2).max(100),description:z.string().max(500).optional(),institutionId:z.string().optional(),city:z.string().trim().min(2).max(100).optional(),state:z.string().trim().length(2).transform(v=>v.toUpperCase()).optional()}).safeParse(req.body);
+  if(!parsed.success) return res.status(400).json({error:'Dados do grupo inválidos.'});
   const group=await prisma.participantGroup.create({data:parsed.data});
+  await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'GROUP_CREATE',targetType:'GROUP',targetId:group.id}});
   res.status(201).json({group});
 }));
 
@@ -262,6 +288,8 @@ const instrumentResultSchema = z.object({
   instrument: z.literal('HSI-DOTH-P'),
   context: z.enum(['cotidiano','trabalho','educacao','familia','social','digital','transito','integrado']),
   answers: z.array(z.number().int().min(1).max(5)).length(25),
+  contextVersion: z.string().max(20).default('1.0'),
+  consentVersion: z.string().max(40).optional(),
 }).strict();
 
 app.get('/api/instrument-results', authenticate, asyncRoute(async (req,res) => {
@@ -279,13 +307,21 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
   const data = parsed.data;
   const existing = await prisma.instrumentAssessment.findUnique({ where: { id: data.id } });
   if (existing) return res.status(409).json({ error: 'Identificador de avaliação já utilizado.' });
-  const scored = scoreDothp(data.answers);
+  const participant = await prisma.user.findUnique({where:{id:req.authUser!.id},select:{groupId:true,group:{select:{institutionId:true,city:true,state:true,institution:{select:{city:true,state:true}}}}}});
+  const scored = scoreDothp(data.answers, data.context);
   const result = await prisma.instrumentAssessment.create({
     data: {
       id: data.id,
       userId: req.authUser!.id,
       instrument: data.instrument,
       context: data.context,
+      contextVersion: data.contextVersion,
+      groupId: participant?.groupId || null,
+      institutionId: participant?.group?.institutionId || null,
+      city: participant?.group?.city || participant?.group?.institution?.city || null,
+      state: participant?.group?.state || participant?.group?.institution?.state || null,
+      consentVersion: data.consentVersion || null,
+      consentedAt: data.consentVersion ? new Date() : null,
       completedAt: new Date(),
       answers: scored.answers as Prisma.InputJsonValue,
       dimensions: scored.dimensions as Prisma.InputJsonValue,
@@ -375,6 +411,82 @@ app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN,UserRole.ANALY
   });
 }));
 
+const researchQuerySchema=z.object({
+  from:z.string().datetime().optional(),
+  to:z.string().datetime().optional(),
+  institutionId:z.string().optional(),
+  context:z.enum(['cotidiano','trabalho','educacao','familia','social','digital','transito','integrado']).optional(),
+});
+async function getResearchAggregate(query:Record<string,unknown>){
+  const parsed=researchQuerySchema.safeParse(query);
+  if(!parsed.success)throw Object.assign(new Error('Filtros de pesquisa inválidos.'),{status:400});
+  const from=parsed.data.from?new Date(parsed.data.from):new Date(Date.now()-365*86400000);
+  const to=parsed.data.to?new Date(parsed.data.to):new Date();
+  if(from>to)throw Object.assign(new Error('Período inválido.'),{status:400});
+  const rows=await prisma.instrumentAssessment.findMany({
+    where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
+    select:{userId:true,institutionId:true,city:true,state:true,context:true,dimensions:true,institution:{select:{name:true,type:true,city:true,state:true}},completedAt:true}
+  });
+  const participants=new Set(rows.map(x=>x.userId)).size;
+  const minimumGroupSize=5;
+  if(participants<minimumGroupSize)return {privacy:{suppressed:true,minimumGroupSize,distinctParticipants:participants},generatedAt:new Date().toISOString(),totals:{assessments:0,participants:0},dimensions:[],timeline:[],contexts:[],geography:[],institutions:[]};
+  const dims=new Map<string,{name:string;sum:number;count:number}>();
+  const contexts=new Map<string,{count:number;users:Set<string>}>();
+  const geo=new Map<string,{state:string;city:string;count:number;users:Set<string>;scores:Map<string,{sum:number;count:number}>}>();
+  const orgs=new Map<string,{name:string;type:string;city:string;state:string;count:number;users:Set<string>;scores:Map<string,{sum:number;count:number}>}>();
+  const timeline=new Map<string,{period:string;count:number;users:Set<string>;scores:Map<string,{sum:number;count:number}>}>();
+  for(const row of rows){
+    const period=row.completedAt.toISOString().slice(0,7);
+    const month=timeline.get(period)||{period,count:0,users:new Set<string>(),scores:new Map()};month.count++;month.users.add(row.userId);
+    for(const raw of row.dimensions as Array<Record<string,unknown>>){const id=String(raw.id||'unknown'),score=Number(raw.score||0);const item=month.scores.get(id)||{sum:0,count:0};item.sum+=score;item.count++;month.scores.set(id,item);}
+    timeline.set(period,month);
+    const ctx=contexts.get(row.context)||{count:0,users:new Set<string>()};ctx.count++;ctx.users.add(row.userId);contexts.set(row.context,ctx);
+    const place=row.institution;
+    if(row.state&&row.city){
+      const key=row.state+'|'+row.city;
+      const g=geo.get(key)||{state:row.state,city:row.city,count:0,users:new Set<string>(),scores:new Map()};
+      g.count++;g.users.add(row.userId);
+      for(const raw of row.dimensions as Array<Record<string,unknown>>){
+        const id=String(raw.id||'unknown'),score=Number(raw.score||0);
+        const ds=g.scores.get(id)||{sum:0,count:0};ds.sum+=score;ds.count++;g.scores.set(id,ds);
+      }
+      geo.set(key,g);
+      if(place&&row.institutionId){
+        const o=orgs.get(row.institutionId)||{name:place.name,type:place.type,city:place.city,state:place.state,count:0,users:new Set<string>(),scores:new Map()};
+        o.count++;o.users.add(row.userId);
+        for(const raw of row.dimensions as Array<Record<string,unknown>>){
+          const id=String(raw.id||'unknown'),score=Number(raw.score||0);
+          const os=o.scores.get(id)||{sum:0,count:0};os.sum+=score;os.count++;o.scores.set(id,os);
+        }
+        orgs.set(row.institutionId,o);
+      }
+    }
+    for(const raw of row.dimensions as Array<Record<string,unknown>>){
+      const id=String(raw.id||'unknown'),item=dims.get(id)||{name:String(raw.name||id),sum:0,count:0};
+      item.sum+=Number(raw.score||0);item.count++;dims.set(id,item);
+    }
+  }
+  const dimensionRows=[...dims.entries()].map(([id,v])=>({id,name:v.name,score:Math.round(v.sum/v.count),applications:v.count}));
+  const safeGroups=(map:Map<string,any>)=>[...map.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([id,v])=>({id,...Object.fromEntries(Object.entries(v).filter(([k])=>k!=='users'&&k!=='scores')),participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))}));
+  return {privacy:{suppressed:false,minimumGroupSize,distinctParticipants:participants},generatedAt:new Date().toISOString(),period:{from:from.toISOString(),to:to.toISOString()},totals:{assessments:rows.length,participants},dimensions:dimensionRows,timeline:[...timeline.values()].filter(v=>v.users.size>=minimumGroupSize).sort((a,b)=>a.period.localeCompare(b.period)).map(v=>({period:v.period,assessments:v.count,participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))})),contexts:[...contexts.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([context,v])=>({context,assessments:v.count,participants:v.users.size})),geography:safeGroups(geo),institutions:safeGroups(orgs)};
+}
+app.get('/api/research/aggregate', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res)=>{
+  const aggregate=await getResearchAggregate(req.query as Record<string,unknown>);
+  res.json(aggregate);
+}));
+app.get('/api/research/export.csv', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res)=>{
+  const aggregate=await getResearchAggregate(req.query as Record<string,unknown>);
+  if(aggregate.privacy.suppressed)return res.status(403).json({error:'Exportação suprimida: são necessários pelo menos cinco participantes distintos.',privacy:aggregate.privacy});
+  const rows:string[][]=[['tipo','codigo','dimensao','pontuacao_media','aplicacoes','participantes']];
+  for(const d of aggregate.dimensions)rows.push(['geral','TODOS',d.name,String(d.score),String(d.applications),String(aggregate.totals.participants)]);
+  for(const g of aggregate.geography)for(const d of g.dimensions)rows.push(['municipio',g.state+'-'+g.city,d.dimensionId,String(d.score),String(g.count),String(g.participants)]);
+  for(const o of aggregate.institutions)for(const d of o.dimensions)rows.push(['instituicao',o.id,d.dimensionId,String(d.score),String(o.count),String(o.participants)]);
+  const csv=rows.map(row=>row.map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(';')).join('\\n');
+  res.setHeader('Content-Type','text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition','attachment; filename="enat-relatorio-agregado.csv"');
+  res.send('\\uFEFF'+csv);
+}));
+
 app.post('/api/advisor', authenticate, asyncRoute(async (req, res) => {
   const parsed = z.object({ resultIds: z.array(z.string().min(8).max(100)).min(1).max(6) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Informe resultados válidos para orientação.' });
@@ -394,6 +506,7 @@ app.post('/api/advisor', authenticate, asyncRoute(async (req, res) => {
 }));
 
 app.use((err: unknown,_req:Request,res:Response,_next:NextFunction) => {
+  if (err && typeof err === 'object' && 'status' in err && typeof err.status === 'number') return res.status(err.status).json({error:err instanceof Error?err.message:'Solicitação inválida.'});
   if (err instanceof Error && err.message === 'INVALID_ANSWER') return res.status(400).json({error:'Resposta inválida ou questão não reconhecida.'});
   console.error(err);
   if (err && typeof err === 'object' && 'code' in err && err.code === 'P2002') return res.status(409).json({error:'Já existe um registro com esses dados.'});

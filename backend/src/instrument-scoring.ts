@@ -1,3 +1,5 @@
+import { getDothpContextHint, getDothpContextQuestion } from './dothp-contexts.js';
+
 export const dothpDimensions = [
   { id: 'decision', name: 'Decisão', subtitle: 'Análise de alternativas, consequências e escolhas conscientes' },
   { id: 'organization', name: 'Organização', subtitle: 'Planejamento, prioridades, consistência e gestão de recursos' },
@@ -36,15 +38,21 @@ export const dothpItems = [
 
 const reverseItems = new Set([3, 8, 13, 18, 23]);
 
-export function scoreDothp(answers: number[]) {
-  const normalized = dothpItems.map(([dimensionId, statement], index) => ({
-    index,
-    dimensionId,
-    statement,
-    response: answers[index],
-    scoredResponse: reverseItems.has(index) ? 6 - answers[index] : answers[index],
-    reverseScored: reverseItems.has(index),
-  }));
+export function scoreDothp(answers: number[], context = 'cotidiano') {
+  const dimensionPositions = new Map<string,number>();
+  const normalized = dothpItems.map(([dimensionId, baseStatement], index) => {
+    const dimensionItemIndex=dimensionPositions.get(dimensionId)||0;
+    dimensionPositions.set(dimensionId,dimensionItemIndex+1);
+    return {
+      index,
+      dimensionId,
+      statement:getDothpContextQuestion(context,dimensionId,dimensionItemIndex,baseStatement),
+      response:answers[index],
+      scoredResponse:reverseItems.has(index)?6-answers[index]:answers[index],
+      reverseScored:reverseItems.has(index),
+      contextHint:getDothpContextHint(context,dimensionId),
+    };
+  });
   const dimensions = dothpDimensions.map(dimension => {
     const rows = normalized.filter(item => item.dimensionId === dimension.id);
     const mean = rows.reduce((sum, item) => sum + item.scoredResponse, 0) / rows.length;
