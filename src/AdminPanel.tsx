@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from './lib/api';
 import ReportsCenter from './ReportsCenter';
+import ResearchCenter from './ResearchCenter';
 
 type Props = { role: 'ADMIN' | 'ANALYST' | 'PARTICIPANT' };
 type Person = { id:string; name:string; email:string; role:string; status:string; participantCode:string|null; groupId:string|null; group?:{name:string}|null };
-type Group = { id:string; name:string; _count?:{users:number} };
+type Group = { id:string; name:string; institutionId?:string|null; city?:string|null; state?:string|null; institution?:{name:string;city:string;state:string}|null; _count?:{users:number} };
 type Analytics = { summary:{assessments:number;participants:number;totalQuestions:number;correct:number;accuracy:number;completeAssessments?:number;axisAssessments?:number}; axes:Array<{axisId:string;title:string;correct:number;total:number;accuracy:number;averageSeconds:number;fastErrors?:number;slowCorrect?:number}>; responseTimes?:{under3:number;from3to5:number;from6to10:number;over10:number}; timeline?:Array<{period:string;assessments:number;questions:number;accuracy:number}> };
 type Behavior = { totals:{cognitiveAssessments:number;cognitiveQuestions:number;cognitiveCorrect:number;cognitiveAccuracy:number;dothpAssessments:number}; dothp:{dimensions:Array<{id:string;name:string;mean:number;score:number;applications:number;low:number;medium:number;high:number}>;contexts:Array<{context:string;count:number}>;likertDistribution:Array<{value:number;count:number}>} };
 
@@ -24,7 +25,7 @@ function ResponseBars({data}:{data:NonNullable<Analytics['responseTimes']>}) {
 }
 
 export default function AdminPanel({role}:Props) {
- const [tab,setTab]=useState<'command'|'overview'|'participants'|'groups'|'reports'>('command');
+ const [tab,setTab]=useState<'command'|'overview'|'participants'|'groups'|'reports'|'research'>('command');
  const [commandData,setCommandData]=useState<any>(null);
  const [from,setFrom]=useState(new Date(Date.now()-30*86400000).toISOString().slice(0,10));
  const [to,setTo]=useState(new Date().toISOString().slice(0,10));
@@ -33,6 +34,10 @@ export default function AdminPanel({role}:Props) {
  const [behavior,setBehavior]=useState<Behavior|null>(null);
  const [people,setPeople]=useState<Person[]>([]);
  const [groups,setGroups]=useState<Group[]>([]);
+ const [institutions,setInstitutions]=useState<Array<{id:string;name:string;city:string;state:string}>>([]);
+ const [groupInstitution,setGroupInstitution]=useState('');
+ const [groupCity,setGroupCity]=useState('');
+ const [groupState,setGroupState]=useState('');
  const [name,setName]=useState('');
  const [email,setEmail]=useState('');
  const [password,setPassword]=useState('');
@@ -58,6 +63,8 @@ export default function AdminPanel({role}:Props) {
   }
   try{const g=await api.get('/api/groups');setGroups(g.data.groups);}
   catch(e:any){setGroups([]);failures.push(e?.response?.data?.error||'Não foi possível carregar os grupos.');}
+  try{const i=await api.get('/api/institutions');setInstitutions(i.data.institutions||[]);}
+  catch(e:any){setInstitutions([]);failures.push(e?.response?.data?.error||'Não foi possível carregar instituições.');}
   if(role==='ADMIN'){
    try{const p=await api.get('/api/users');setPeople(p.data.users);}
    catch(e:any){setPeople([]);failures.push(e?.response?.data?.error||'Não foi possível carregar os participantes.');}
@@ -76,7 +83,7 @@ export default function AdminPanel({role}:Props) {
  };
  const createGroup=async(e:React.FormEvent)=>{
   e.preventDefault();setError('');setNotice('');
-  try{await api.post('/api/groups',{name:newGroup});setNewGroup('');setNotice('Grupo criado.');await load();}
+  try{await api.post('/api/groups',{name:newGroup,institutionId:groupInstitution||undefined,city:groupCity||undefined,state:groupState||undefined});setNewGroup('');setGroupInstitution('');setGroupCity('');setGroupState('');setNotice('Grupo criado.');await load();}
   catch(e:any){setError(e?.response?.data?.error||'Falha ao criar grupo.');}
  };
  const updateStatus=async(p:Person)=>{
@@ -91,6 +98,7 @@ export default function AdminPanel({role}:Props) {
    {role==='ADMIN'&&<button className={tab==='participants'?'selected':''} onClick={()=>setTab('participants')}>Participantes</button>}
    {role==='ADMIN'&&<button className={tab==='groups'?'selected':''} onClick={()=>setTab('groups')}>Grupos</button>}
    <button className={tab==='reports'?'selected':''} onClick={()=>setTab('reports')}>Relatórios</button>
+   <button className={tab==='research'?'selected':''} onClick={()=>setTab('research')}>Centro de pesquisas</button>
   </nav>
   {notice&&<div className="notice success">{notice}</div>}{error&&<div className="notice error">{error}</div>}
 
@@ -118,6 +126,7 @@ export default function AdminPanel({role}:Props) {
   </div>}
   {tab==='participants'&&role==='ADMIN'&&<div className="admin-content"><div className="admin-section"><h3>Novo participante</h3><form className="participant-form" onSubmit={createPerson}><label>Nome completo<input required value={name} onChange={e=>setName(e.target.value)} placeholder="Nome do participante"/></label><label>E-mail de acesso<input required type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="nome@exemplo.com"/></label><label>Código de identificação<input value={code} onChange={e=>setCode(e.target.value)} placeholder="Opcional"/></label><label>Senha inicial<input type="password" minLength={12} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Deixe vazio para gerar senha temporária"/></label><label>Perfil<select value={roleToCreate} onChange={e=>setRoleToCreate(e.target.value as 'PARTICIPANT'|'ANALYST')}><option value="PARTICIPANT">Participante</option><option value="ANALYST">Analista</option></select></label><label>Grupo<select value={groupToAssign} onChange={e=>setGroupToAssign(e.target.value)}><option value="">Sem grupo</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></label><button className="primary">Cadastrar acesso</button></form></div><div className="admin-section"><h3>Contas cadastradas</h3><div className="table-scroll"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>Ação</th></tr></thead><tbody>{people.map(p=><tr key={p.id}><td>{p.name}</td><td>{p.email}</td><td>{p.role}</td><td>{p.status}</td><td><button className="table-action" onClick={()=>void updateStatus(p)}>{p.status==='ACTIVE'?'Desativar':'Ativar'}</button></td></tr>)}</tbody></table></div></div></div>}
   {tab==='reports'&&<ReportsCenter/>}
-  {tab==='groups'&&role==='ADMIN'&&<div className="admin-content"><div className="admin-section"><h3>Criar grupo de avaliação</h3><form className="group-form" onSubmit={createGroup}><input required value={newGroup} onChange={e=>setNewGroup(e.target.value)} placeholder="Nome do grupo"/><button className="primary">Criar grupo</button></form></div><div className="admin-section"><h3>Grupos cadastrados</h3><div className="group-list">{groups.map(g=><article key={g.id}><b>{g.name}</b><span>{g._count?.users||0} participantes</span></article>)}</div></div></div>}
+  {tab==='research'&&(role==='ADMIN'||role==='ANALYST')&&<ResearchCenter role={role}/>}
+  {tab==='groups'&&role==='ADMIN'&&<div className="admin-content"><div className="admin-section"><h3>Criar grupo de avaliação</h3><form className="participant-form" onSubmit={createGroup}><label>Nome do grupo<input required value={newGroup} onChange={e=>setNewGroup(e.target.value)} placeholder="Nome do grupo"/></label><label>Instituição<select value={groupInstitution} onChange={e=>{setGroupInstitution(e.target.value);const i=institutions.find(x=>x.id===e.target.value);if(i){setGroupCity(i.city);setGroupState(i.state);}}}><option value="">Sem instituição vinculada</option>{institutions.map(i=><option key={i.id} value={i.id}>{i.name} · {i.city}/{i.state}</option>)}</select></label><label>Município<input value={groupCity} onChange={e=>setGroupCity(e.target.value)} placeholder="Município"/></label><label>UF<input maxLength={2} value={groupState} onChange={e=>setGroupState(e.target.value.toUpperCase())} placeholder="SC"/></label><button className="primary">Criar grupo</button></form></div><div className="admin-section"><h3>Grupos cadastrados</h3><div className="group-list">{groups.map(g=><article key={g.id}><b>{g.name}</b><span>{g.institution?.name||"Sem instituição"} · {g.city||g.institution?.city||"Local não informado"}/{g.state||g.institution?.state||"—"} · {g._count?.users||0} participantes</span></article>)}</div></div></div>}
  </section>;
 }
