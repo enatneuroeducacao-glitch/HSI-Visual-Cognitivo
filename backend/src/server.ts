@@ -241,8 +241,8 @@ app.post('/api/auth/reset-password', asyncRoute(async (req, res) => {
 
 const participantSchema = z.object({ name: z.string().trim().min(2).max(120), email: z.string().email().max(254), password: z.string().min(12).max(200).optional(), role: z.enum(['PARTICIPANT','ANALYST']).default('PARTICIPANT'), participantCode: z.string().trim().max(60).optional(), groupId: z.string().optional() });
 app.get('/api/users', authenticate, allow(UserRole.ADMIN), asyncRoute(async (req, res) => {
-  const users = await prisma.user.findMany({ where: req.authUser!.role === UserRole.ANALYST ? { role: UserRole.PARTICIPANT } : {}, select: { id:true,name:true,email:true,role:true,status:true,participantCode:true,groupId:true,createdAt:true,group:{select:{id:true,name:true}} }, orderBy: { createdAt:'desc' } });
-  res.json({ users });
+  const users = await prisma.user.findMany({ where: req.authUser!.role === UserRole.ANALYST ? { role: UserRole.PARTICIPANT } : {}, select: { id:true,name:true,email:true,role:true,status:true,participantCode:true,publicAccess:true,birthDate:true,sex:true,city:true,state:true,licenseCategory:true,institutionType:true,institutionName:true,groupSector:true,privacyNoticeVersion:true,privacyAcknowledgedAt:true,researchConsentVersion:true,researchConsentedAt:true,groupId:true,createdAt:true,group:{select:{id:true,name:true}} }, orderBy: { createdAt:'desc' } });
+  res.json({ users: users.map(user => ({ ...user, name:user.publicAccess?'Participante público':user.name, email:user.publicAccess?null:user.email })) });
 }));
 app.post('/api/users', authenticate, allow(UserRole.ADMIN), asyncRoute(async (req, res) => {
   const parsed = participantSchema.safeParse(req.body);
@@ -510,7 +510,10 @@ app.get('/api/analytics', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), 
   const to = typeof req.query.to === 'string' ? new Date(req.query.to) : new Date();
   const groupId = typeof req.query.groupId === 'string' ? req.query.groupId : undefined;
   if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from > to) return res.status(400).json({error:'Período inválido.'});
-  const where = { completedAt:{gte:from,lte:to}, ...(groupId ? {user:{groupId}} : {}) };
+  const where = {
+    completedAt:{gte:from,lte:to},
+    user:{ ...(groupId ? {groupId} : {}), OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}] }
+  };
   const rows=await prisma.assessmentResult.findMany({where,select:{userId:true,mode:true,totalQuestions:true,correct:true,durationSeconds:true,axes:true,answerDetails:true,completedAt:true}});
   const totalQuestions=rows.reduce((sum,row)=>sum+row.totalQuestions,0);
   const correct=rows.reduce((sum,row)=>sum+row.correct,0);
@@ -548,10 +551,11 @@ app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN,UserRole.ANALY
   const to=typeof req.query.to==='string'?new Date(req.query.to):new Date();
   const groupId=typeof req.query.groupId==='string'?req.query.groupId:undefined;
   if(!Number.isFinite(from.getTime())||!Number.isFinite(to.getTime())||from>to)return res.status(400).json({error:'Período inválido.'});
-  const where={completedAt:{gte:from,lte:to},...(groupId?{user:{groupId}}:{})};
+  const userFilter={...(groupId?{groupId}:{}),OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]};
+  const where={completedAt:{gte:from,lte:to},user:userFilter};
   const [cognitive,instruments]=await Promise.all([
     prisma.assessmentResult.findMany({where,select:{userId:true,totalQuestions:true,correct:true,axes:true,answerDetails:true,completedAt:true}}),
-    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},...(groupId?{user:{groupId}}:{})},select:{userId:true,context:true,dimensions:true,answers:true,completedAt:true}})
+    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:userFilter},select:{userId:true,context:true,dimensions:true,answers:true,completedAt:true}})
   ]);
   const minimumGroupSize=5;
   const cognitiveParticipants=new Set(cognitive.map(row=>row.userId)).size;
