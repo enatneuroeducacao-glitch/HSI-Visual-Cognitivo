@@ -432,7 +432,12 @@ async function getResearchAggregate(query:Record<string,unknown>){
   const contexts=new Map<string,{count:number;users:Set<string>}>();
   const geo=new Map<string,{state:string;city:string;count:number;users:Set<string>;scores:Map<string,{sum:number;count:number}>}>();
   const orgs=new Map<string,{name:string;type:string;city:string;state:string;count:number;users:Set<string>;scores:Map<string,{sum:number;count:number}>}>();
+  const timeline=new Map<string,{period:string;count:number;users:Set<string>;scores:Map<string,{sum:number;count:number}>}>();
   for(const row of rows){
+    const period=row.completedAt.toISOString().slice(0,7);
+    const month=timeline.get(period)||{period,count:0,users:new Set<string>(),scores:new Map()};month.count++;month.users.add(row.userId);
+    for(const raw of row.dimensions as Array<Record<string,unknown>>){const id=String(raw.id||'unknown'),score=Number(raw.score||0);const item=month.scores.get(id)||{sum:0,count:0};item.sum+=score;item.count++;month.scores.set(id,item);}
+    timeline.set(period,month);
     const ctx=contexts.get(row.context)||{count:0,users:new Set<string>()};ctx.count++;ctx.users.add(row.userId);contexts.set(row.context,ctx);
     const place=row.institution;
     if(place){
@@ -455,7 +460,7 @@ async function getResearchAggregate(query:Record<string,unknown>){
   }
   const dimensionRows=[...dims.entries()].map(([id,v])=>({id,name:v.name,score:Math.round(v.sum/v.count),applications:v.count}));
   const safeGroups=(map:Map<string,any>)=>[...map.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([id,v])=>({id,...Object.fromEntries(Object.entries(v).filter(([k])=>k!=='users'&&k!=='scores')),participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))}));
-  return {privacy:{suppressed:false,minimumGroupSize,distinctParticipants:participants},generatedAt:new Date().toISOString(),period:{from:from.toISOString(),to:to.toISOString()},totals:{assessments:rows.length,participants},dimensions:dimensionRows,contexts:[...contexts.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([context,v])=>({context,assessments:v.count,participants:v.users.size})),geography:safeGroups(geo),institutions:safeGroups(orgs)};
+  return {privacy:{suppressed:false,minimumGroupSize,distinctParticipants:participants},generatedAt:new Date().toISOString(),period:{from:from.toISOString(),to:to.toISOString()},totals:{assessments:rows.length,participants},dimensions:dimensionRows,timeline:[...timeline.values()].filter(v=>v.users.size>=minimumGroupSize).sort((a,b)=>a.period.localeCompare(b.period)).map(v=>({period:v.period,assessments:v.count,participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))})),contexts:[...contexts.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([context,v])=>({context,assessments:v.count,participants:v.users.size})),geography:safeGroups(geo),institutions:safeGroups(orgs)};
 }
 app.get('/api/research/aggregate', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res)=>{
   const aggregate=await getResearchAggregate(req.query as Record<string,unknown>);
