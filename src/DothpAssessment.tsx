@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { api } from './lib/api';
-import { getDothpContextHint } from './dothp-contexts';
+import { getDothpContextHint, getDothpContextQuestion } from './dothp-contexts';
 
 const dimensions = [
  {id:'decision',name:'Decisão',subtitle:'Análise de alternativas, consequências e escolhas conscientes'},
@@ -73,7 +73,7 @@ export default function DothpAssessment(){
   {saveError&&<div className="dothp-save-error" role="alert">{saveError}</div>}
   <div className="dothp-progress"><div><strong>{Object.keys(answers).length} de 25 respondidas</strong><span>{Math.round(Object.keys(answers).length/25*100)}%</span></div><div className="dothp-track"><i style={{width:(Object.keys(answers).length/25*100)+'%'}}/></div></div>
   {dimensions.map((d,di)=><section className="dothp-dimension" key={d.id}><div className="dothp-dimension-head"><span>DIMENSÃO 0{di+1}</span><h2>{d.name}</h2><p>{d.subtitle}</p><p className="dothp-context-guidance"><strong>Foco contextual:</strong> {getDothpContextHint(context,d.id)}</p></div>
-  {items.map((q,i)=>q[0]===d.id?<article className="dothp-question" key={i}><div className="dothp-question-title"><b>{String(i+1).padStart(2,'0')}</b><p>{q[1]}</p></div><div className="dothp-options">{scale.map((label,j)=><label className={answers[i]===j+1?'chosen':''} key={j}><input type="radio" name={'dothp-'+i} checked={answers[i]===j+1} onChange={()=>setAnswer(i,j+1)}/><span>{j+1}</span><small>{label}</small></label>)}</div></article>:null)}
+  {items.map((q,i)=>q[0]===d.id?<article className="dothp-question" key={i}><div className="dothp-question-title"><b>{String(i+1).padStart(2,'0')}</b><p>{getDothpContextQuestion(context,q[0],items.slice(0,i).filter(item=>item[0]===q[0]).length,q[1])}</p></div><div className="dothp-options">{scale.map((label,j)=><label className={answers[i]===j+1?'chosen':''} key={j}><input type="radio" name={'dothp-'+i} checked={answers[i]===j+1} onChange={()=>setAnswer(i,j+1)}/><span>{j+1}</span><small>{label}</small></label>)}</div></article>:null)}
   </section>)}
   <label className="dothp-research-consent"><input type="checkbox" checked={researchConsent} onChange={e=>setResearchConsent(e.target.checked)}/><span><strong>Participação voluntária em pesquisas ENAT (opcional).</strong> Autorizo que minhas respostas sejam utilizadas em análises estatísticas e pesquisas, exclusivamente em formato agregado e anonimizado. Posso concluir a avaliação sem marcar esta opção.</span></label><div className="dothp-actions"><button className="secondary" onClick={reset}>Limpar respostas</button><button className="primary" disabled={!complete||saving} onClick={saveAndShowResult}>{saving?'Registrando respostas…':'Calcular perfil dimensional e salvar'}</button></div>
   </>:<><section className="dothp-results"><span className="eyebrow">DEVOLUTIVA DESCRITIVA · {context.toUpperCase()}</span>{saved&&<div className="dothp-saved-notice">Avaliação registrada no histórico da sua conta.</div>}<h2>Panorama por dimensão</h2><p>Os resultados abaixo representam somente suas respostas nesta aplicação. Não existe nota geral nem classificação de aprovação.</p>
