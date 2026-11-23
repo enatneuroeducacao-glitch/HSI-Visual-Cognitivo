@@ -4,6 +4,7 @@ import AdminPanel from './AdminPanel';
 import DothpAssessment from './DothpAssessment';
 import InstrumentHistory from './InstrumentHistory';
 import PublicAccess from './PublicAccess';
+import ResearchProfile from './ResearchProfile';
 
 const logoUrl = new URL('../assets/hsi-visual-cognitivo.webp', import.meta.url).href;
 
@@ -104,7 +105,6 @@ function App() {
   const [consentUpdating, setConsentUpdating] = useState(false);
   const [consentFeedback, setConsentFeedback] = useState('');
   const [mode, setMode] = useState('full');
-  const [studyCode, setStudyCode] = useState('');
   const [runQuestions, setRunQuestions] = useState<Question[]>([]);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
@@ -337,6 +337,12 @@ function App() {
   };
 
   const startTest = async (axisId?: string) => {
+    const profile = user?.researchProfile;
+    if (!profile?.birthDate || !profile?.sex || !profile?.city || !profile?.state || !profile?.institutionType) {
+      setSaveError('Antes de iniciar os exercícios, complete o cadastro de pesquisa do respondente.');
+      setView('home');
+      return;
+    }
     setSaveError('');
     try {
       const params = new URLSearchParams(axisId ? { mode: 'axis', axisId } : { mode: 'full' });
@@ -368,7 +374,6 @@ function App() {
       totalQuestions: finalAnswers.length,
       durationSeconds: totalSeconds,
       instrumentVersion: '1.0',
-      ...(studyCode.trim() ? { studyCode: studyCode.trim() } : {}),
       answerDetails: finalAnswers.map(({ questionId, axisId, selected, seconds }) => ({ questionId, axisId, selected, seconds })),
     };
     setSaving(true);
@@ -457,7 +462,7 @@ function App() {
         >
           ⌂ <span>Painel inicial</span>
         </button>
-        <button className={view === 'dothp' ? 'nav-item active' : 'nav-item'} onClick={() => setView('dothp')}>
+        <button className={view === 'dothp' ? 'nav-item active' : 'nav-item'} onClick={() => { if (!user?.researchProfile?.birthDate) { setSaveError('Complete primeiro o cadastro de pesquisa no painel inicial.'); setView('home'); return; } setView('dothp'); }}>
           ◉ <span>HSI-DOTH-P comportamental</span>
         </button>
         <button
@@ -556,11 +561,7 @@ function App() {
                 {consentFeedback && <small className="public-consent-feedback" role="status">{consentFeedback}</small>}
               </div>
             )}
-            <div className="dothp-context">
-              <label htmlFor="cognitive-study-code">Código do estudo ou intervenção <small>(opcional)</small></label>
-              <input id="cognitive-study-code" maxLength={80} value={studyCode} onChange={e => setStudyCode(e.target.value)} placeholder="Preencha somente se esta avaliação fizer parte de um estudo específico" />
-              <p>Se informado, cada resultado será classificado como aplicação experimental e associado ao código declarado.</p>
-            </div>
+            <ResearchProfile user={user} onSaved={setUser} />
             <div className="section-heading">
               <div>
                 <span className="eyebrow">SEIS EIXOS COGNITIVOS</span>
