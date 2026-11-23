@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import logoUrl from '../assets/hsi-visual-cognitivo.webp';
 import { auth, api } from './lib/api';
 import AdminPanel from './AdminPanel';
 import DothpAssessment from './DothpAssessment';
@@ -429,7 +430,7 @@ function App() {
     return (
       <main className="login-screen">
         <div className="login-card">
-          <img className="login-brand-logo" src="/assets/hsi-visual-cognitivo.webp" alt="HSI Visual Cognitivo" />
+          <img className="login-brand-logo" src={logoUrl} alt="HSI Visual Cognitivo" />
           <p className="eyebrow">ENAT · PESQUISA E DESENVOLVIMENTO</p>
           <h1>HSI Visual Cognitivo</h1>
           <p className="muted">
@@ -490,7 +491,7 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand-lockup">
-          <img className="sidebar-brand-logo" src="/assets/hsi-visual-cognitivo.webp" alt="HSI Visual Cognitivo" />
+          <img className="sidebar-brand-logo" src={logoUrl} alt="HSI Visual Cognitivo" />
         </div>
         <div className="side-label">AMBIENTE</div>
         <button
