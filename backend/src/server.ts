@@ -308,7 +308,7 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
   const existing = await prisma.instrumentAssessment.findUnique({ where: { id: data.id } });
   if (existing) return res.status(409).json({ error: 'Identificador de avaliação já utilizado.' });
   const participant = await prisma.user.findUnique({where:{id:req.authUser!.id},select:{groupId:true,group:{select:{institutionId:true}}}});
-  const scored = scoreDothp(data.answers);
+  const scored = scoreDothp(data.answers, data.context);
   const result = await prisma.instrumentAssessment.create({
     data: {
       id: data.id,
