@@ -534,6 +534,17 @@ async function getResearchAggregate(query:Record<string,unknown>){
     }
   }
   const dimensionRows=[...dims.entries()].map(([id,v])=>({id,name:v.name,score:Math.round(v.sum/v.count),applications:v.count}));
+  const states = new Map<string,{state:string;count:number;users:Set<string>;scores:Map<string,{sum:number;count:number}>}>();
+  for (const cityGroup of geo.values()) {
+    const stateGroup=states.get(cityGroup.state)||{state:cityGroup.state,count:0,users:new Set<string>(),scores:new Map<string,{sum:number;count:number}>()};
+    stateGroup.count+=cityGroup.count;
+    for (const userId of cityGroup.users) stateGroup.users.add(userId);
+    for (const [dimensionId,score] of cityGroup.scores.entries()) {
+      const total=stateGroup.scores.get(dimensionId)||{sum:0,count:0};
+      total.sum+=score.sum;total.count+=score.count;stateGroup.scores.set(dimensionId,total);
+    }
+    states.set(cityGroup.state,stateGroup);
+  }
   type AggregateGroup = { users: Set<string>; scores: Map<string, { sum: number; count: number }> };
   const safeGroups = <T extends AggregateGroup>(
     map: Map<string, T>
@@ -555,7 +566,7 @@ async function getResearchAggregate(query:Record<string,unknown>){
         })),
       };
     });
-  return {privacy:{suppressed:false,minimumGroupSize,distinctParticipants:participants},generatedAt:new Date().toISOString(),period:{from:from.toISOString(),to:to.toISOString()},totals:{assessments:rows.length,participants},dimensions:dimensionRows,timeline:[...timeline.values()].filter(v=>v.users.size>=minimumGroupSize).sort((a,b)=>a.period.localeCompare(b.period)).map(v=>({period:v.period,assessments:v.count,participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))})),contexts:[...contexts.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([context,v])=>({context,assessments:v.count,participants:v.users.size})),geography:safeGroups(geo),institutions:safeGroups(orgs)};
+  return {privacy:{suppressed:false,minimumGroupSize,distinctParticipants:participants},generatedAt:new Date().toISOString(),period:{from:from.toISOString(),to:to.toISOString()},totals:{assessments:rows.length,participants},dimensions:dimensionRows,timeline:[...timeline.values()].filter(v=>v.users.size>=minimumGroupSize).sort((a,b)=>a.period.localeCompare(b.period)).map(v=>({period:v.period,assessments:v.count,participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))})),contexts:[...contexts.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([context,v])=>({context,assessments:v.count,participants:v.users.size})),geography:safeGroups(geo),states:safeGroups(states),institutions:safeGroups(orgs)};
 }
 app.get('/api/research/aggregate', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res)=>{
   const aggregate=await getResearchAggregate(req.query as Record<string,unknown>);
