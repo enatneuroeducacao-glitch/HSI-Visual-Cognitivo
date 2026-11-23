@@ -19,6 +19,14 @@ enum UserStatus {
   DISABLED
 }
 
+enum InstitutionType {
+  SCHOOL
+  COMPANY
+  PUBLIC_AGENCY
+  RESEARCH_CENTER
+  OTHER
+}
+
 model User {
   id                 String       @id @default(cuid())
   name               String
@@ -41,6 +49,11 @@ model ParticipantGroup {
   name        String
   description String?
   users       User[]
+  institutionId String?
+  institution Institution? @relation(fields: [institutionId], references: [id], onDelete: SetNull)
+  city        String?
+  state       String? @db.VarChar(2)
+  assessments InstrumentAssessment[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -100,6 +113,34 @@ model InstrumentAssessment {
   dimensions  Json
   createdAt   DateTime @default(now())
 
+  groupId       String?
+  group         ParticipantGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  institutionId String?
+  institution   Institution? @relation(fields: [institutionId], references: [id], onDelete: SetNull)
+  contextVersion String @default("1.0")
+  consentVersion String?
+  consentedAt    DateTime?
+
   @@index([userId, completedAt])
   @@index([instrument, completedAt])
+  @@index([context, completedAt])
+  @@index([institutionId, completedAt])
+  @@index([groupId, completedAt])
+}
+
+model Institution {
+  id          String          @id @default(cuid())
+  name        String
+  type        InstitutionType @default(OTHER)
+  city        String
+  state       String          @db.VarChar(2)
+  country     String          @default("BR") @db.VarChar(2)
+  active      Boolean         @default(true)
+  groups      ParticipantGroup[]
+  assessments InstrumentAssessment[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([state, city])
+  @@index([type, active])
 }
