@@ -1279,3 +1279,25 @@ button:disabled {
 .dothp-profile-grid input:focus,.dothp-profile-grid select:focus{border-color:#6685c8;box-shadow:0 0 0 3px #6685c81c}
 .dothp-profile-privacy{font-size:10px;line-height:1.6;color:#758399;margin:14px 0 0}
 @media(max-width:650px){.dothp-participant-data{padding:17px 14px}.dothp-profile-grid{grid-template-columns:1fr}}
+
+
+/* Formulário do respondente: campos de identificação compactos e território em destaque */
+.dothp-profile-grid{
+  grid-template-columns:minmax(150px,.72fr) minmax(112px,.5fr) minmax(170px,.82fr) minmax(280px,1.5fr);
+  align-items:end;
+}
+.dothp-profile-grid>label:nth-child(1){grid-column:1}
+.dothp-profile-grid>label:nth-child(2){grid-column:2}
+.dothp-profile-grid>label:nth-child(3){grid-column:3}
+.dothp-profile-grid>label:nth-child(4){grid-column:4}
+.dothp-profile-grid>label:nth-child(5){grid-column:1}
+.dothp-profile-grid>label:nth-child(6){grid-column:2 / span 2}
+.dothp-profile-grid>label:nth-child(7){grid-column:4}
+.dothp-profile-grid>label:nth-child(8){grid-column:2 / span 3}
+@media(max-width:900px){
+  .dothp-profile-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .dothp-profile-grid>label:nth-child(n){grid-column:auto}
+}
+@media(max-width:650px){
+  .dothp-profile-grid{grid-template-columns:minmax(0,1fr)}
+}
