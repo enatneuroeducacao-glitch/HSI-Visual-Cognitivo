@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from './lib/api';
+import ParticipantLongitudinal from './ParticipantLongitudinal';
 
 type CognitiveResult = { id:string; completedAt:string; accuracy:number; correct:number; totalQuestions:number; axes:Array<{axisId:string;title:string;accuracy:number;correct:number;total:number;averageSeconds?:number}> };
 type InstrumentAnswer = { index:number; dimensionId:string; statement:string; response:number; scoredResponse:number; reverseScored:boolean; contextHint?:string };
@@ -34,7 +35,9 @@ export default function InstrumentHistory({ cognitiveResults }: { cognitiveResul
   useEffect(()=>{let active=true;api.get('/api/instrument-results').then(r=>{if(active)setResults(r.data.results||[])}).catch(()=>{if(active)setError('Não foi possível carregar as avaliações comportamentais.')}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[]);
   const latestCognitive=useMemo(()=>[...cognitiveResults].sort((a,b)=>b.completedAt.localeCompare(a.completedAt))[0],[cognitiveResults]);
   if(loading)return <section className="instrument-history"><h3>Questionários comportamentais</h3><p>Carregando registros…</p></section>;
-  return <section className="instrument-history">
+  return <>
+    <ParticipantLongitudinal />
+    <section className="instrument-history">
     <div className="instrument-history-heading"><div><span className="eyebrow">INSTRUMENTOS DE AUTORRELATO</span><h3>Questionários e pareceres comportamentais</h3><p>Respostas individuais, resultados por dimensão e interpretação descritiva de cada aplicação.</p></div><span className="instrument-count">{results.length} registro(s)</span></div>
     {error&&<div className="instrument-error" role="alert">{error}</div>}
     {!results.length&&!error&&<div className="instrument-empty">Nenhum questionário comportamental foi salvo nesta conta. As novas aplicações do HSI-DOTH-P serão registradas aqui.</div>}
@@ -77,5 +80,6 @@ export default function InstrumentHistory({ cognitiveResults }: { cognitiveResul
         <div className="instrument-method-note"><strong>Limite interpretativo:</strong> instrumento em versão piloto, sem validação psicométrica estabelecida. Os resultados não são normas populacionais, diagnóstico, laudo clínico, avaliação de personalidade, seleção profissional ou classificação de aptidão para dirigir. O HSI-DOTH-P não deve ser confundido com um escore geral HSI.</div>
       </article>;
     })}
-  </section>;
+  </section>
+  </>;
 }
