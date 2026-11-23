@@ -1331,3 +1331,9 @@ button:disabled {
 .public-code-reminder span{font-size:11px;color:#64748b}
 .public-code-reminder button{border:0;border-radius:7px;background:#e7edff;color:#4656c7;padding:8px 11px;font-size:11px;font-weight:700;cursor:pointer}
 @media(max-width:640px){.public-access-card{padding:24px 18px;max-height:none}.public-form-grid{grid-template-columns:1fr}.public-institution-name{grid-column:auto}.public-code-reminder{align-items:flex-start;flex-direction:column}}
+
+.public-privacy-details{border:1px solid #dce5f1;border-radius:9px;padding:11px 13px;background:#fbfcff;color:#46556d}
+.public-privacy-details summary{font-size:11px;font-weight:700;cursor:pointer;color:#4052bd}
+.public-privacy-details>div{padding-top:9px}
+.public-privacy-details p{font-size:10px;line-height:1.6;color:#68768d;margin:7px 0}
+.public-privacy-review{padding-top:8px;border-top:1px solid #e1e7f0;font-style:italic}
