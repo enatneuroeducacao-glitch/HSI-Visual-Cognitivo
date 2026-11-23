@@ -59,6 +59,14 @@ declare global { namespace Express { interface Request { authUser?: AuthUser } }
 
 const asyncRoute = (fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>) =>
   (req: Request, res: Response, next: NextFunction) => Promise.resolve(fn(req, res, next)).catch(next);
+
+async function withSerializableRetry<T>(work: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { return await work(); }
+    catch (error: any) { if (error?.code !== 'P2034' || attempt === 2) throw error; }
+  }
+  throw new Error('Não foi possível reservar a sequência da avaliação.');
+}
 const publicUser = (u: AuthUser) => ({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, participantCode: u.participantCode, groupId: u.groupId });
 
 const authenticate = asyncRoute(async (req, res, next) => {
@@ -242,6 +250,8 @@ const resultSchema = z.object({
   id:z.string().min(8).max(100), mode:z.enum(['Avaliação completa','Eixo individual']),
   completedAt:z.string().datetime(), totalQuestions:z.number().int().min(1).max(30),
   durationSeconds:z.number().int().min(1).max(86400),
+  studyCode:z.string().trim().min(2).max(80).optional(),
+  instrumentVersion:z.string().trim().min(1).max(20).default('1.0'),
   answerDetails:z.array(z.object({ questionId:z.string().min(1).max(40), axisId:z.string().min(1).max(40), selected:z.number().int().min(0).max(3), seconds:z.number().int().min(1).max(3600) }).strict()).min(1).max(30),
 }).strict();
 app.get('/api/results', authenticate, asyncRoute(async (req,res) => {
@@ -275,10 +285,21 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
     const axisCorrect = rows.filter(a => a.correct).length;
     return { axisId, title: axisTitles[axisId] || axisId, correct: axisCorrect, total: rows.length, accuracy: Math.round(axisCorrect / rows.length * 100), averageSeconds: Math.round(rows.reduce((sum,a) => sum + a.seconds, 0) / rows.length) };
   });
-  const existing = await prisma.assessmentResult.findUnique({where:{id:d.id}});
-  if (existing) return res.status(409).json({error:'Identificador de resultado já utilizado.'});
-  const result = await prisma.assessmentResult.create({data:{id:d.id,userId:req.authUser!.id,participantCode:req.authUser!.participantCode || 'SEM-CÓDIGO',mode:d.mode,completedAt:new Date(d.completedAt),totalQuestions:verified.length,correct,accuracy,durationSeconds:d.durationSeconds,axes:axes as Prisma.InputJsonValue,answerDetails:verified as Prisma.InputJsonValue}});
-  await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'ASSESSMENT_SUBMIT',targetType:'RESULT',targetId:result.id}});
+  const result = await withSerializableRetry(() => prisma.$transaction(async tx => {
+    const existing = await tx.assessmentResult.findUnique({where:{id:d.id}});
+    if (existing) throw Object.assign(new Error('Identificador de resultado já utilizado.'), { statusCode: 409 });
+    const applicationNumber = await tx.assessmentResult.count({where:{userId:req.authUser!.id}}) + 1;
+    const studyCode = d.studyCode?.trim() || null;
+    const created = await tx.assessmentResult.create({data:{
+      id:d.id,userId:req.authUser!.id,participantCode:req.authUser!.participantCode || 'SEM-CÓDIGO',
+      mode:d.mode,completedAt:new Date(d.completedAt),totalQuestions:verified.length,correct,accuracy,
+      durationSeconds:d.durationSeconds,axes:axes as Prisma.InputJsonValue,answerDetails:verified as Prisma.InputJsonValue,
+      applicationNumber,applicationType:studyCode?'EXPERIMENTAL':applicationNumber===1?'BASELINE':'REEVALUATION',
+      studyCode,instrumentVersion:d.instrumentVersion
+    }});
+    await tx.auditLog.create({data:{actorId:req.authUser!.id,action:'ASSESSMENT_SUBMIT',targetType:'RESULT',targetId:created.id,metadata:{applicationNumber,applicationType:created.applicationType,studyCode}}});
+    return created;
+  }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable}));
   res.status(201).json({result});
 }));
 
@@ -289,6 +310,8 @@ const instrumentResultSchema = z.object({
   context: z.enum(['cotidiano','trabalho','educacao','familia','social','digital','transito','integrado']),
   answers: z.array(z.number().int().min(1).max(5)).length(25),
   contextVersion: z.string().max(20).default('1.0'),
+  instrumentVersion: z.string().trim().min(1).max(20).default('1.0'),
+  studyCode: z.string().trim().min(2).max(80).optional(),
   consentVersion: z.string().max(40).optional(),
   participantData: z.object({
     birthDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -315,11 +338,11 @@ app.get('/api/instrument-results', authenticate, asyncRoute(async (req,res) => {
 
 app.get('/api/instrument-results/longitudinal', authenticate, asyncRoute(async (req,res) => {
   const [behavioral, cognitive] = await Promise.all([
-    prisma.instrumentAssessment.findMany({where:{userId:req.authUser!.id,instrument:'HSI-DOTH-P'},orderBy:{completedAt:'asc'},select:{id:true,context:true,contextVersion:true,completedAt:true,dimensions:true}}),
-    prisma.assessmentResult.findMany({where:{userId:req.authUser!.id},orderBy:{completedAt:'asc'},select:{id:true,mode:true,completedAt:true,accuracy:true,correct:true,totalQuestions:true,axes:true}})
+    prisma.instrumentAssessment.findMany({where:{userId:req.authUser!.id,instrument:'HSI-DOTH-P'},orderBy:{completedAt:'asc'},select:{id:true,context:true,contextVersion:true,completedAt:true,dimensions:true,applicationNumber:true,applicationType:true,studyCode:true,instrumentVersion:true}}),
+    prisma.assessmentResult.findMany({where:{userId:req.authUser!.id},orderBy:{completedAt:'asc'},select:{id:true,mode:true,completedAt:true,accuracy:true,correct:true,totalQuestions:true,axes:true,applicationNumber:true,applicationType:true,studyCode:true,instrumentVersion:true}})
   ]);
   const labels:Record<string,string>={cotidiano:'Vida cotidiana e relações pessoais',trabalho:'Trabalho e ambiente profissional',educacao:'Estudos e aprendizagem',familia:'Família e convivência',social:'Comunidade e participação social',digital:'Ambientes digitais',transito:'Mobilidade e trânsito',integrado:'Diferentes contextos da vida'};
-  const normalized=behavioral.map(row=>({id:row.id,context:row.context,contextLabel:labels[row.context]||row.context,contextVersion:row.contextVersion,completedAt:row.completedAt.toISOString(),dimensions:(row.dimensions as Array<Record<string,unknown>>).map(d=>({id:String(d.id||'unknown'),name:String(d.name||d.id||'Dimensão'),score:Number(d.score||0),mean:Number(d.mean||0)}))}));
+  const normalized=behavioral.map(row=>({id:row.id,context:row.context,contextLabel:labels[row.context]||row.context,contextVersion:row.contextVersion,completedAt:row.completedAt.toISOString(),applicationNumber:row.applicationNumber,applicationType:row.applicationType,studyCode:row.studyCode,instrumentVersion:row.instrumentVersion,dimensions:(row.dimensions as Array<Record<string,unknown>>).map(d=>({id:String(d.id||'unknown'),name:String(d.name||d.id||'Dimensão'),score:Number(d.score||0),mean:Number(d.mean||0)}))}));
   const previousByContext=new Map<string,typeof normalized[number]>();
   const behavioralTimeline=normalized.map(row=>{
     const previous=previousByContext.get(row.context);
@@ -331,8 +354,8 @@ app.get('/api/instrument-results/longitudinal', authenticate, asyncRoute(async (
     const rows=normalized.filter(row=>row.context===context),latest=rows[rows.length-1];
     return{context,label:labels[context]||context,applications:rows.length,firstCompletedAt:rows[0].completedAt,latestCompletedAt:latest.completedAt,dimensions:latest.dimensions.map(d=>{const values=rows.map(r=>r.dimensions.find(x=>x.id===d.id)?.score).filter((v):v is number=>typeof v==='number');return{id:d.id,name:d.name,latestScore:d.score,meanAcrossApplications:values.length?Math.round(values.reduce((a,b)=>a+b,0)/values.length):null,observations:values.length};})};
   });
-  const cognitiveTimeline=cognitive.map(row=>({id:row.id,mode:row.mode,completedAt:row.completedAt.toISOString(),accuracy:row.accuracy,correct:row.correct,totalQuestions:row.totalQuestions,axes:row.axes}));
-  res.json({generatedAt:new Date().toISOString(),methodology:{behavioralInstrument:'HSI-DOTH-P',cognitiveInstrument:'HSI Visual Cognitivo',scalesCombined:false,causalInference:false,note:'As séries comportamental e cognitiva são apresentadas separadamente. Diferenças entre aplicações são descritivas e não comprovam mudança estável, validade preditiva ou causalidade.'},totals:{behavioralApplications:behavioral.length,cognitiveApplications:cognitive.length},contexts,behavioralTimeline,cognitiveTimeline});
+  const cognitiveTimeline=cognitive.map(row=>({id:row.id,mode:row.mode,completedAt:row.completedAt.toISOString(),accuracy:row.accuracy,correct:row.correct,totalQuestions:row.totalQuestions,applicationNumber:row.applicationNumber,applicationType:row.applicationType,studyCode:row.studyCode,instrumentVersion:row.instrumentVersion,axes:row.axes}));
+  res.json({generatedAt:new Date().toISOString(),methodology:{behavioralInstrument:'HSI-DOTH-P',cognitiveInstrument:'HSI Visual Cognitivo',scalesCombined:false,causalInference:false,repeatApplications:'Ilimitadas; cada envio válido gera novo registro imutável, com numeração própria por instrumento.',applicationTypes:['BASELINE','REEVALUATION','EXPERIMENTAL'],note:'As séries comportamental e cognitiva são apresentadas separadamente. Diferenças entre aplicações são descritivas e não comprovam mudança estável, validade preditiva ou causalidade.'},totals:{behavioralApplications:behavioral.length,cognitiveApplications:cognitive.length},contexts,behavioralTimeline,cognitiveTimeline});
 }));
 
 app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => {
@@ -350,13 +373,22 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
     ? await prisma.institution.findFirst({where:{active:true,name:{equals:profile.institutionName,mode:'insensitive'},city:{equals:profile.city,mode:'insensitive'},state:profile.state,type:profile.institutionType as any},select:{id:true}})
     : null;
   const scored = scoreDothp(data.answers, data.context);
-  const result = await prisma.instrumentAssessment.create({
+  const result = await withSerializableRetry(() => prisma.$transaction(async tx => {
+    const existing = await tx.instrumentAssessment.findUnique({where:{id:data.id}});
+    if(existing) throw Object.assign(new Error('Identificador de avaliação já utilizado.'), {statusCode:409});
+    const applicationNumber = await tx.instrumentAssessment.count({where:{userId:req.authUser!.id,instrument:data.instrument}}) + 1;
+    const studyCode = data.studyCode?.trim() || null;
+    const created = await tx.instrumentAssessment.create({
     data: {
       id: data.id,
       userId: req.authUser!.id,
       instrument: data.instrument,
       context: data.context,
       contextVersion: data.contextVersion,
+      instrumentVersion: data.instrumentVersion,
+      applicationNumber,
+      applicationType: studyCode?'EXPERIMENTAL':applicationNumber===1?'BASELINE':'REEVALUATION',
+      studyCode,
       groupId: participant?.groupId || null,
       institutionId: linkedInstitution?.id || (profile ? null : participant?.group?.institutionId || null),
       city: profile?.city || participant?.group?.city || participant?.group?.institution?.city || null,
@@ -373,8 +405,10 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
       answers: scored.answers as Prisma.InputJsonValue,
       dimensions: scored.dimensions as Prisma.InputJsonValue,
     },
-  });
-  await prisma.auditLog.create({ data: { actorId: req.authUser!.id, action: 'INSTRUMENT_SUBMIT', targetType: 'INSTRUMENT_RESULT', targetId: result.id, metadata: { instrument: data.instrument, context: data.context } } });
+    });
+    await tx.auditLog.create({ data: { actorId: req.authUser!.id, action: 'INSTRUMENT_SUBMIT', targetType: 'INSTRUMENT_RESULT', targetId: created.id, metadata: { instrument: data.instrument, context: data.context, applicationNumber, applicationType:created.applicationType, studyCode } } });
+    return created;
+  }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable}));
   res.status(201).json({ result: { ...result, completedAt: result.completedAt.toISOString() } });
 }));
 
