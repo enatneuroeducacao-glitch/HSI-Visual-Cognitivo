@@ -301,6 +301,73 @@ app.get('/api/instrument-results', authenticate, asyncRoute(async (req,res) => {
   res.json({ results: rows.map(row => ({ ...row, completedAt: row.completedAt.toISOString() })) });
 }));
 
+
+app.get('/api/instrument-results/longitudinal', authenticate, asyncRoute(async (req,res) => {
+  const [behavioral, cognitive] = await Promise.all([
+    prisma.instrumentAssessment.findMany({
+      where: { userId: req.authUser!.id, instrument: 'HSI-DOTH-P' },
+      orderBy: { completedAt: 'asc' },
+      select: { id:true, context:true, contextVersion:true, completedAt:true, dimensions:true }
+    }),
+    prisma.assessmentResult.findMany({
+      where: { userId: req.authUser!.id },
+      orderBy: { completedAt: 'asc' },
+      select: { id:true, mode:true, completedAt:true, accuracy:true, correct:true, totalQuestions:true, axes:true }
+    })
+  ]);
+  const contextLabels:Record<string,string> = {
+    cotidiano:'Vida cotidiana e relações pessoais', trabalho:'Trabalho e ambiente profissional',
+    educacao:'Estudos e aprendizagem', familia:'Família e convivência',
+    social:'Comunidade e participação social', digital:'Ambientes digitais',
+    transito:'Mobilidade e trânsito', integrado:'Diferentes contextos da vida'
+  };
+  const normalized = behavioral.map(row => ({
+    id:row.id, context:row.context, contextLabel:contextLabels[row.context]||row.context,
+    contextVersion:row.contextVersion, completedAt:row.completedAt.toISOString(),
+    dimensions:(row.dimensions as Array<Record<string,unknown>>).map(d=>({
+      id:String(d.id||'unknown'), name:String(d.name||d.id||'Dimensão'),
+      score:Number(d.score||0), mean:Number(d.mean||0)
+    }))
+  }));
+  const previousByContext = new Map<string, typeof normalized[number]>();
+  const timeline = normalized.map(row => {
+    const previous = previousByContext.get(row.context);
+    const comparison = row.dimensions.map(d => {
+      const old = previous?.dimensions.find(x=>x.id===d.id);
+      return { dimensionId:d.id, score:d.score, previousScore:old?.score??null, difference:old?d.score-old.score:null };
+    });
+    previousByContext.set(row.context,row);
+    return { ...row, comparisonWithPreviousSameContext:comparison };
+  });
+  const contexts = [...new Set(normalized.map(row=>row.context))].map(context => {
+    const rows=normalized.filter(row=>row.context===context);
+    const latest=rows[rows.length-1];
+    return {
+      context, label:contextLabels[context]||context, applications:rows.length,
+      firstCompletedAt:rows[0].completedAt, latestCompletedAt:latest.completedAt,
+      dimensions:latest.dimensions.map(d=>{
+        const values=rows.map(r=>r.dimensions.find(x=>x.id===d.id)?.score).filter((v):v is number=>typeof v==='number');
+        return {id:d.id,name:d.name,latestScore:d.score,meanAcrossApplications:values.length?Math.round(values.reduce((a,b)=>a+b,0)/values.length):null,observations:values.length};
+      })
+    };
+  });
+  const cognitiveTimeline=cognitive.map(row=>({
+    id:row.id,mode:row.mode,completedAt:row.completedAt.toISOString(),
+    accuracy:row.accuracy,correct:row.correct,totalQuestions:row.totalQuestions,
+    axes:row.axes
+  }));
+  res.json({
+    generatedAt:new Date().toISOString(),
+    methodology:{
+      behavioralInstrument:'HSI-DOTH-P',cognitiveInstrument:'HSI Visual Cognitivo',
+      scalesCombined:false,causalInference:false,
+      note:'As séries comportamental e cognitiva são apresentadas separadamente. Diferenças entre aplicações são descritivas e não comprovam mudança estável, validade preditiva ou causalidade.'
+    },
+    totals:{behavioralApplications:behavioral.length,cognitiveApplications:cognitive.length},
+    contexts, behavioralTimeline:timeline, cognitiveTimeline
+  });
+}));
+
 app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => {
   const parsed = instrumentResultSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Questionário incompleto ou dados inválidos.', details: parsed.error.flatten() });
