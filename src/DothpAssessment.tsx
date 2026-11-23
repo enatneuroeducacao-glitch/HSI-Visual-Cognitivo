@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { api } from './lib/api';
+import { getDothpContextHint } from './dothp-contexts';
 
 const dimensions = [
  {id:'decision',name:'Decisão',subtitle:'Análise de alternativas, consequências e escolhas conscientes'},
@@ -60,7 +61,7 @@ export default function DothpAssessment(){
   if(!complete||saving)return;
   setSaving(true);setSaveError('');
   try{
-   await api.post('/api/instrument-results',{id:crypto.randomUUID(),instrument:'HSI-DOTH-P',context,answers:items.map((_,i)=>answers[i])});
+   await api.post('/api/instrument-results',{id:crypto.randomUUID(),instrument:'HSI-DOTH-P',context,contextVersion:'1.1',answers:items.map((_,i)=>answers[i])});
    setSaved(true);setShowResult(true);
   }catch(error:any){setSaveError(error?.response?.data?.error||'Não foi possível registrar suas respostas. Verifique a conexão e tente novamente.');}
   finally{setSaving(false);}
@@ -70,7 +71,7 @@ export default function DothpAssessment(){
   {!showResult?<><div className="dothp-context"><label htmlFor="dothp-context">Contexto que deseja considerar ao responder</label><select id="dothp-context" value={context} onChange={e=>setContext(e.target.value)}><option value="cotidiano">Vida cotidiana e relações pessoais</option><option value="trabalho">Trabalho e ambiente profissional</option><option value="educacao">Estudos e aprendizagem</option><option value="familia">Família e convivência</option><option value="social">Comunidade e participação social</option><option value="digital">Ambientes digitais</option><option value="transito">Mobilidade e trânsito</option><option value="integrado">Considerar diferentes contextos</option></select><p>Responda pensando em como costuma agir, e não em como acredita que deveria agir. Considere experiências recentes e representativas.</p></div>
   {saveError&&<div className="dothp-save-error" role="alert">{saveError}</div>}
   <div className="dothp-progress"><div><strong>{Object.keys(answers).length} de 25 respondidas</strong><span>{Math.round(Object.keys(answers).length/25*100)}%</span></div><div className="dothp-track"><i style={{width:(Object.keys(answers).length/25*100)+'%'}}/></div></div>
-  {dimensions.map((d,di)=><section className="dothp-dimension" key={d.id}><div className="dothp-dimension-head"><span>DIMENSÃO 0{di+1}</span><h2>{d.name}</h2><p>{d.subtitle}</p></div>
+  {dimensions.map((d,di)=><section className="dothp-dimension" key={d.id}><div className="dothp-dimension-head"><span>DIMENSÃO 0{di+1}</span><h2>{d.name}</h2><p>{d.subtitle}</p><p className="dothp-context-guidance"><strong>Foco contextual:</strong> {getDothpContextHint(context,d.id)}</p></div>
   {items.map((q,i)=>q[0]===d.id?<article className="dothp-question" key={i}><div className="dothp-question-title"><b>{String(i+1).padStart(2,'0')}</b><p>{q[1]}</p></div><div className="dothp-options">{scale.map((label,j)=><label className={answers[i]===j+1?'chosen':''} key={j}><input type="radio" name={'dothp-'+i} checked={answers[i]===j+1} onChange={()=>setAnswer(i,j+1)}/><span>{j+1}</span><small>{label}</small></label>)}</div></article>:null)}
   </section>)}
   <div className="dothp-actions"><button className="secondary" onClick={reset}>Limpar respostas</button><button className="primary" disabled={!complete||saving} onClick={saveAndShowResult}>{saving?'Registrando respostas…':'Calcular perfil dimensional e salvar'}</button></div>
