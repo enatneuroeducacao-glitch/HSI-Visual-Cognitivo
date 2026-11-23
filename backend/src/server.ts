@@ -405,6 +405,7 @@ const resultSchema = z.object({
   id:z.string().min(8).max(100), mode:z.enum(['Avaliação completa','Eixo individual']),
   completedAt:z.string().datetime(), totalQuestions:z.number().int().min(1).max(30),
   durationSeconds:z.number().int().min(1).max(86400),
+  studyCode:z.string().trim().min(2).max(80).optional(),
   instrumentVersion:z.string().trim().min(1).max(20).default('1.0'),
   answerDetails:z.array(z.object({ questionId:z.string().min(1).max(40), axisId:z.string().min(1).max(40), selected:z.number().int().min(0).max(3), seconds:z.number().int().min(1).max(3600) }).strict()).min(1).max(30),
 }).strict();
@@ -443,14 +444,15 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
     const existing = await tx.assessmentResult.findUnique({where:{id:d.id}});
     if (existing) throw Object.assign(new Error('Identificador de resultado já utilizado.'), { status: 409 });
     const applicationNumber = await tx.assessmentResult.count({where:{userId:req.authUser!.id}}) + 1;
+    const studyCode = d.studyCode?.trim() || null;
     const created = await tx.assessmentResult.create({data:{
       id:d.id,userId:req.authUser!.id,participantCode:req.authUser!.participantCode || 'SEM-CÓDIGO',
       mode:d.mode,completedAt:new Date(d.completedAt),totalQuestions:verified.length,correct,accuracy,
       durationSeconds:d.durationSeconds,axes:axes as Prisma.InputJsonValue,answerDetails:verified as Prisma.InputJsonValue,
-      applicationNumber,applicationType:applicationNumber===1?'BASELINE':'REEVALUATION',
-      studyCode:null,instrumentVersion:d.instrumentVersion
+      applicationNumber,applicationType:studyCode?'EXPERIMENTAL':applicationNumber===1?'BASELINE':'REEVALUATION',
+      studyCode,instrumentVersion:d.instrumentVersion
     }});
-    await tx.auditLog.create({data:{actorId:req.authUser!.id,action:'ASSESSMENT_SUBMIT',targetType:'RESULT',targetId:created.id,metadata:{applicationNumber,applicationType:created.applicationType}}});
+    await tx.auditLog.create({data:{actorId:req.authUser!.id,action:'ASSESSMENT_SUBMIT',targetType:'RESULT',targetId:created.id,metadata:{applicationNumber,applicationType:created.applicationType,studyCode}}});
     return created;
   }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable}));
   res.status(201).json({result});
@@ -464,7 +466,7 @@ const instrumentResultSchema = z.object({
   answers: z.array(z.number().int().min(1).max(5)).length(25),
   contextVersion: z.string().max(20).default('1.0'),
   instrumentVersion: z.string().trim().min(1).max(20).default('1.0'),
-
+  studyCode: z.string().trim().min(2).max(80).optional(),
   consentVersion: z.string().max(40).optional(),
   participantData: z.object({
     birthDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -530,6 +532,7 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
     const existing = await tx.instrumentAssessment.findUnique({where:{id:data.id}});
     if(existing) throw Object.assign(new Error('Identificador de avaliação já utilizado.'), {status:409});
     const applicationNumber = await tx.instrumentAssessment.count({where:{userId:req.authUser!.id,instrument:data.instrument}}) + 1;
+    const studyCode = data.studyCode?.trim() || null;
     const created = await tx.instrumentAssessment.create({
     data: {
       id: data.id,
@@ -539,8 +542,8 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
       contextVersion: data.contextVersion,
       instrumentVersion: data.instrumentVersion,
       applicationNumber,
-      applicationType: applicationNumber===1?'BASELINE':'REEVALUATION',
-      studyCode:null,
+      applicationType: studyCode?'EXPERIMENTAL':applicationNumber===1?'BASELINE':'REEVALUATION',
+      studyCode,
       groupId: participant?.groupId || null,
       institutionId: linkedInstitution?.id || (profile ? null : participant?.group?.institutionId || null),
       city: profile?.city || participant?.group?.city || participant?.group?.institution?.city || null,
@@ -558,7 +561,7 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
       dimensions: scored.dimensions as Prisma.InputJsonValue,
     },
     });
-    await tx.auditLog.create({ data: { actorId: req.authUser!.id, action: 'INSTRUMENT_SUBMIT', targetType: 'INSTRUMENT_RESULT', targetId: created.id, metadata: { instrument: data.instrument, context: data.context, applicationNumber, applicationType:created.applicationType } } });
+    await tx.auditLog.create({ data: { actorId: req.authUser!.id, action: 'INSTRUMENT_SUBMIT', targetType: 'INSTRUMENT_RESULT', targetId: created.id, metadata: { instrument: data.instrument, context: data.context, applicationNumber, applicationType:created.applicationType, studyCode } } });
     return created;
   }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable}));
   res.status(201).json({ result: { ...result, completedAt: result.completedAt.toISOString() } });
