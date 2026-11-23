@@ -76,5 +76,8 @@ export const publicAccess = {
     const response = await api.post('/api/public/session', { participantCode });
     setPersistentPublicToken(response.data.token);
     return response.data;
+  },
+  async updateResearchConsent(researchConsent: boolean) {
+    return api.patch('/api/public/research-consent', { researchConsent });
   }
 };
