@@ -79,3 +79,29 @@ test('série longitudinal exige autenticação e restringe os dados à própria 
   assert.equal(response.status, 200);
   assert.equal(response.body.behavioralTimeline.every((item: any) => item.id.startsWith(suffix)), true);
 });
+
+test('registra dados sociodemográficos e vínculo institucional declarado sem exigir cadastro prévio', async () => {
+  const participantData = { birthDate:'1990-04-12', sex:'F', licenseCategory:'B', city:'Joinville', state:'SC', country:'BR', institutionType:'SCHOOL', institutionName:'Escola de Pesquisa ENAT', groupSector:'Ensino médio' };
+  const response = await request(app).post('/api/instrument-results')
+    .set('Authorization', 'Bearer ' + token())
+    .send({ id:suffix+'-profile', instrument:'HSI-DOTH-P', context:'educacao', answers:Array(25).fill(3), participantData });
+  assert.equal(response.status, 201);
+  assert.equal(response.body.result.city, 'Joinville');
+  assert.equal(response.body.result.state, 'SC');
+  assert.equal(response.body.result.sex, 'F');
+  assert.equal(response.body.result.licenseCategory, 'B');
+  assert.equal(response.body.result.institutionType, 'SCHOOL');
+  assert.equal(response.body.result.institutionName, 'Escola de Pesquisa ENAT');
+  assert.equal(response.body.result.institutionId, null);
+});
+
+test('rejeita sexo fora de M/F e UF inválida nos dados do respondente', async () => {
+  const auth = 'Bearer ' + token();
+  const base = { birthDate:'1990-04-12', sex:'X', city:'Joinville', state:'SC', institutionType:'INDEPENDENT' };
+  const badSex = await request(app).post('/api/instrument-results').set('Authorization',auth)
+    .send({id:suffix+'-bad-sex',instrument:'HSI-DOTH-P',context:'cotidiano',answers:Array(25).fill(3),participantData:base});
+  assert.equal(badSex.status,400);
+  const badState = await request(app).post('/api/instrument-results').set('Authorization',auth)
+    .send({id:suffix+'-bad-state',instrument:'HSI-DOTH-P',context:'cotidiano',answers:Array(25).fill(3),participantData:{...base,sex:'M',state:'Santa Catarina'}});
+  assert.equal(badState.status,400);
+});
