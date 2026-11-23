@@ -57,7 +57,7 @@ export default function DothpAssessment(){
    return {...d,mean,index:Math.round((mean-1)*25),answered:values.length};
  }),[answers]);
  const setAnswer=(i:number,v:number)=>{setAnswers(prev=>({...prev,[i]:v}));setShowResult(false)};
- const reset=()=>{setAnswers({});setShowResult(false);setSaveError('');setSaved(false)};
+ const reset=()=>{setAnswers({});setShowResult(false);setSaveError('');setSaved(false);setResearchConsent(false)};
  const saveAndShowResult=async()=>{
   if(!complete||saving)return;
   setSaving(true);setSaveError('');
