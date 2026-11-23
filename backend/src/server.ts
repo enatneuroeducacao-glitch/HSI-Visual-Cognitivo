@@ -467,7 +467,27 @@ async function getResearchAggregate(query:Record<string,unknown>){
     }
   }
   const dimensionRows=[...dims.entries()].map(([id,v])=>({id,name:v.name,score:Math.round(v.sum/v.count),applications:v.count}));
-  const safeGroups=(map:Map<string,any>)=>[...map.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([id,v])=>({id,...Object.fromEntries(Object.entries(v).filter(([k])=>k!=='users'&&k!=='scores')),participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))}));
+  type AggregateGroup = { users: Set<string>; scores: Map<string, { sum: number; count: number }> };
+  const safeGroups = <T extends AggregateGroup>(
+    map: Map<string, T>
+  ): Array<Omit<T, 'users' | 'scores'> & {
+    id: string;
+    participants: number;
+    dimensions: Array<{ dimensionId: string; score: number }>;
+  }> => [...map.entries()]
+    .filter(([, value]) => value.users.size >= minimumGroupSize)
+    .map(([id, value]) => {
+      const { users, scores, ...attributes } = value;
+      return {
+        id,
+        ...attributes,
+        participants: users.size,
+        dimensions: [...scores.entries()].map(([dimensionId, score]) => ({
+          dimensionId,
+          score: Math.round(score.sum / score.count),
+        })),
+      };
+    });
   return {privacy:{suppressed:false,minimumGroupSize,distinctParticipants:participants},generatedAt:new Date().toISOString(),period:{from:from.toISOString(),to:to.toISOString()},totals:{assessments:rows.length,participants},dimensions:dimensionRows,timeline:[...timeline.values()].filter(v=>v.users.size>=minimumGroupSize).sort((a,b)=>a.period.localeCompare(b.period)).map(v=>({period:v.period,assessments:v.count,participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))})),contexts:[...contexts.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([context,v])=>({context,assessments:v.count,participants:v.users.size})),geography:safeGroups(geo),institutions:safeGroups(orgs)};
 }
 app.get('/api/research/aggregate', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res)=>{
