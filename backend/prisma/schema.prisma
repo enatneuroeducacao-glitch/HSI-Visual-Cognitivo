@@ -35,6 +35,19 @@ model User {
   role               UserRole     @default(PARTICIPANT)
   status             UserStatus   @default(INVITED)
   participantCode    String?      @unique
+  publicAccess       Boolean      @default(false)
+  birthDate          DateTime?    @db.Date
+  sex                String?      @db.VarChar(1)
+  city               String?
+  state              String?      @db.VarChar(2)
+  licenseCategory    String?
+  institutionType    String?
+  institutionName    String?
+  groupSector        String?
+  privacyNoticeVersion String?
+  privacyAcknowledgedAt DateTime?
+  researchConsentVersion String?
+  researchConsentedAt DateTime?
   groupId            String?
   group              ParticipantGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   results            AssessmentResult[]
@@ -42,6 +55,8 @@ model User {
   resetTokens        PasswordResetToken[]
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
+  @@index([publicAccess, createdAt])
+  @@index([state, city])
 }
 
 model ParticipantGroup {

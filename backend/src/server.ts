@@ -53,8 +53,15 @@ const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173').spl
 app.use(cors({ origin(origin, cb) { if (!origin || allowedOrigins.includes(origin)) return cb(null, true); cb(new Error('Origem não autorizada')); }, credentials: false }));
 app.use(express.json({ limit: '1mb' }));
 app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false }));
+app.use('/api/public', rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: 'draft-7', legacyHeaders: false }));
 
-type AuthUser = { id: string; name: string; email: string; role: UserRole; status: UserStatus; participantCode: string | null; groupId: string | null };
+type AuthUser = {
+  id: string; name: string; email: string; role: UserRole; status: UserStatus;
+  participantCode: string | null; groupId: string | null; publicAccess?: boolean;
+  birthDate?: Date | null; sex?: string | null; city?: string | null; state?: string | null;
+  licenseCategory?: string | null; institutionType?: string | null; institutionName?: string | null;
+  groupSector?: string | null; researchConsentVersion?: string | null; researchConsentedAt?: Date | null;
+};
 declare global { namespace Express { interface Request { authUser?: AuthUser } } }
 
 const asyncRoute = (fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>) =>
@@ -67,7 +74,17 @@ async function withSerializableRetry<T>(work: () => Promise<T>): Promise<T> {
   }
   throw new Error('Não foi possível reservar a sequência da avaliação.');
 }
-const publicUser = (u: AuthUser) => ({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status, participantCode: u.participantCode, groupId: u.groupId });
+const publicUser = (u: AuthUser) => ({
+  id: u.id, name: u.publicAccess ? 'Participante público' : u.name,
+  email: u.publicAccess ? null : u.email, role: u.role, status: u.status,
+  participantCode: u.participantCode, groupId: u.groupId, publicAccess: Boolean(u.publicAccess),
+  researchProfile: u.publicAccess ? {
+    birthDate: u.birthDate ? u.birthDate.toISOString().slice(0, 10) : null,
+    sex: u.sex, licenseCategory: u.licenseCategory, city: u.city, state: u.state,
+    institutionType: u.institutionType, institutionName: u.institutionName, groupSector: u.groupSector,
+    researchConsent: Boolean(u.researchConsentedAt), researchConsentVersion: u.researchConsentVersion
+  } : null
+});
 
 const authenticate = asyncRoute(async (req, res, next) => {
   const raw = req.headers.authorization?.replace(/^Bearer\s+/i, '');
@@ -132,6 +149,83 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
   }
 }));
 
+
+const publicParticipantSchema = z.object({
+  birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  sex: z.enum(['M', 'F']),
+  licenseCategory: z.enum(['NONE','ACC','A','B','C','D','E','AB','AC','AD','AE']).nullable().optional(),
+  city: z.string().trim().min(2).max(100),
+  state: z.enum(['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO']),
+  institutionType: z.enum(['INDEPENDENT','SCHOOL','COMPANY','PUBLIC_AGENCY','UNIVERSITY','RESEARCH_CENTER','COMMUNITY','OTHER']),
+  institutionName: z.string().trim().max(180).nullable().optional(),
+  groupSector: z.string().trim().max(120).nullable().optional(),
+  privacyNoticeVersion: z.literal('ENAT-PRIVACY-1.0'),
+  researchConsent: z.boolean().default(false)
+}).strict();
+
+function publicSessionToken(userId: string) {
+  return jwt.sign({ access: 'public-participant' }, JWT_SECRET!, { subject: userId, expiresIn: '365d', issuer: 'hsi-visual-cognitivo' });
+}
+
+app.post('/api/public/participants', asyncRoute(async (req, res) => {
+  const parsed = publicParticipantSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Confira os dados obrigatórios e a confirmação do aviso de privacidade.', details: parsed.error.flatten() });
+  const data = parsed.data;
+  const birthDate = new Date(data.birthDate + 'T00:00:00.000Z');
+  if (!Number.isFinite(birthDate.getTime()) || birthDate.toISOString().slice(0, 10) !== data.birthDate || birthDate > new Date()) {
+    return res.status(400).json({ error: 'Informe uma data de nascimento válida.' });
+  }
+  if (data.institutionType === 'INDEPENDENT' && data.institutionName?.trim()) {
+    return res.status(400).json({ error: 'O nome da instituição só pode ser informado quando houver vínculo institucional.' });
+  }
+  const participantCode = 'ENAT-PUB-' + crypto.randomBytes(24).toString('base64url');
+  const email = 'public-' + crypto.randomUUID() + '@anonymous.hsi.invalid';
+  const passwordHash = await bcrypt.hash(crypto.randomBytes(48).toString('base64url'), 12);
+  const user = await prisma.user.create({ data: {
+    name: 'Participante público', email, passwordHash, role: UserRole.PARTICIPANT, status: UserStatus.ACTIVE,
+    participantCode, publicAccess: true, birthDate, sex: data.sex, city: data.city, state: data.state,
+    licenseCategory: data.licenseCategory || null, institutionType: data.institutionType,
+    institutionName: data.institutionName?.trim() || null, groupSector: data.groupSector?.trim() || null,
+    privacyNoticeVersion: data.privacyNoticeVersion, privacyAcknowledgedAt: new Date(),
+    researchConsentVersion: data.researchConsent ? 'ENAT-RESEARCH-1.0' : null,
+    researchConsentedAt: data.researchConsent ? new Date() : null
+  }});
+  await prisma.auditLog.create({ data: {
+    actorId: user.id, action: 'PUBLIC_PARTICIPANT_CREATE', targetType: 'USER', targetId: user.id,
+    metadata: { publicAccess: true, researchConsent: data.researchConsent, privacyNoticeVersion: data.privacyNoticeVersion }
+  }});
+  return res.status(201).json({ token: publicSessionToken(user.id), expiresIn: 31536000, participantCode, user: publicUser(user as AuthUser) });
+}));
+
+app.post('/api/public/session', asyncRoute(async (req, res) => {
+  const parsed = z.object({ participantCode: z.string().trim().min(30).max(100) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Informe seu código privado de participante.' });
+  const user = await prisma.user.findUnique({ where: { participantCode: parsed.data.participantCode } });
+  if (!user || !user.publicAccess || user.status !== UserStatus.ACTIVE) return res.status(401).json({ error: 'Código de participante inválido. Confira os caracteres e tente novamente.' });
+  await prisma.auditLog.create({ data: { actorId: user.id, action: 'PUBLIC_PARTICIPANT_RESUME', targetType: 'USER', targetId: user.id }});
+  return res.json({ token: publicSessionToken(user.id), expiresIn: 31536000, participantCode: user.participantCode, user: publicUser(user as AuthUser) });
+}));
+
+
+app.patch('/api/public/research-consent', authenticate, asyncRoute(async (req, res) => {
+  if (!req.authUser!.publicAccess) return res.status(403).json({ error: 'Esta operação está disponível somente para participantes públicos.' });
+  const parsed = z.object({ researchConsent: z.boolean() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Informe uma opção válida de consentimento.' });
+  const enabled = parsed.data.researchConsent;
+  const user = await prisma.user.update({
+    where: { id: req.authUser!.id },
+    data: {
+      researchConsentVersion: enabled ? 'ENAT-RESEARCH-1.0' : null,
+      researchConsentedAt: enabled ? new Date() : null
+    }
+  });
+  await prisma.auditLog.create({ data: {
+    actorId: user.id, action: enabled ? 'PUBLIC_RESEARCH_CONSENT_GRANTED' : 'PUBLIC_RESEARCH_CONSENT_WITHDRAWN',
+    targetType: 'USER', targetId: user.id, metadata: { researchConsent: enabled }
+  }});
+  return res.json({ user: publicUser(user as AuthUser) });
+}));
+
 app.get('/api/auth/me', authenticate, (req, res) => res.json({ user: publicUser(req.authUser!) }));
 
 app.post('/api/auth/forgot-password', asyncRoute(async (req, res) => {
@@ -167,8 +261,8 @@ app.post('/api/auth/reset-password', asyncRoute(async (req, res) => {
 
 const participantSchema = z.object({ name: z.string().trim().min(2).max(120), email: z.string().email().max(254), password: z.string().min(12).max(200).optional(), role: z.enum(['PARTICIPANT','ANALYST']).default('PARTICIPANT'), participantCode: z.string().trim().max(60).optional(), groupId: z.string().optional() });
 app.get('/api/users', authenticate, allow(UserRole.ADMIN), asyncRoute(async (req, res) => {
-  const users = await prisma.user.findMany({ where: req.authUser!.role === UserRole.ANALYST ? { role: UserRole.PARTICIPANT } : {}, select: { id:true,name:true,email:true,role:true,status:true,participantCode:true,groupId:true,createdAt:true,group:{select:{id:true,name:true}} }, orderBy: { createdAt:'desc' } });
-  res.json({ users });
+  const users = await prisma.user.findMany({ where: req.authUser!.role === UserRole.ANALYST ? { role: UserRole.PARTICIPANT } : {}, select: { id:true,name:true,email:true,role:true,status:true,participantCode:true,publicAccess:true,birthDate:true,sex:true,city:true,state:true,licenseCategory:true,institutionType:true,institutionName:true,groupSector:true,privacyNoticeVersion:true,privacyAcknowledgedAt:true,researchConsentVersion:true,researchConsentedAt:true,groupId:true,createdAt:true,group:{select:{id:true,name:true}} }, orderBy: { createdAt:'desc' } });
+  res.json({ users: users.map(user => ({ ...user, name:user.publicAccess?'Participante público':user.name, email:user.publicAccess?null:user.email })) });
 }));
 app.post('/api/users', authenticate, allow(UserRole.ADMIN), asyncRoute(async (req, res) => {
   const parsed = participantSchema.safeParse(req.body);
@@ -436,7 +530,10 @@ app.get('/api/analytics', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), 
   const to = typeof req.query.to === 'string' ? new Date(req.query.to) : new Date();
   const groupId = typeof req.query.groupId === 'string' ? req.query.groupId : undefined;
   if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from > to) return res.status(400).json({error:'Período inválido.'});
-  const where = { completedAt:{gte:from,lte:to}, ...(groupId ? {user:{groupId}} : {}) };
+  const where = {
+    completedAt:{gte:from,lte:to},
+    user:{ ...(groupId ? {groupId} : {}), OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}] }
+  };
   const rows=await prisma.assessmentResult.findMany({where,select:{userId:true,mode:true,totalQuestions:true,correct:true,durationSeconds:true,axes:true,answerDetails:true,completedAt:true}});
   const totalQuestions=rows.reduce((sum,row)=>sum+row.totalQuestions,0);
   const correct=rows.reduce((sum,row)=>sum+row.correct,0);
@@ -474,10 +571,11 @@ app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN,UserRole.ANALY
   const to=typeof req.query.to==='string'?new Date(req.query.to):new Date();
   const groupId=typeof req.query.groupId==='string'?req.query.groupId:undefined;
   if(!Number.isFinite(from.getTime())||!Number.isFinite(to.getTime())||from>to)return res.status(400).json({error:'Período inválido.'});
-  const where={completedAt:{gte:from,lte:to},...(groupId?{user:{groupId}}:{})};
+  const userFilter={...(groupId?{groupId}:{}),OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]};
+  const where={completedAt:{gte:from,lte:to},user:userFilter};
   const [cognitive,instruments]=await Promise.all([
     prisma.assessmentResult.findMany({where,select:{userId:true,totalQuestions:true,correct:true,axes:true,answerDetails:true,completedAt:true}}),
-    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},...(groupId?{user:{groupId}}:{})},select:{userId:true,context:true,dimensions:true,answers:true,completedAt:true}})
+    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:userFilter},select:{userId:true,context:true,dimensions:true,answers:true,completedAt:true}})
   ]);
   const minimumGroupSize=5;
   const cognitiveParticipants=new Set(cognitive.map(row=>row.userId)).size;
@@ -524,7 +622,7 @@ async function getResearchAggregate(query:Record<string,unknown>){
   const to=parsed.data.to?new Date(parsed.data.to):new Date();
   if(from>to)throw Object.assign(new Error('Período inválido.'),{status:400});
   const rows=await prisma.instrumentAssessment.findMany({
-    where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
+    where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:{OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]},...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
     select:{userId:true,institutionId:true,city:true,state:true,context:true,dimensions:true,institutionType:true,institutionName:true,groupSector:true,institution:{select:{name:true,type:true,city:true,state:true}},completedAt:true}
   });
   const participants=new Set(rows.map(x=>x.userId)).size;
