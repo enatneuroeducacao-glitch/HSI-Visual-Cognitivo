@@ -117,6 +117,8 @@ model InstrumentAssessment {
   group         ParticipantGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   institutionId String?
   institution   Institution? @relation(fields: [institutionId], references: [id], onDelete: SetNull)
+  city          String?
+  state         String? @db.VarChar(2)
   contextVersion String @default("1.0")
   consentVersion String?
   consentedAt    DateTime?
