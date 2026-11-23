@@ -290,6 +290,17 @@ const instrumentResultSchema = z.object({
   answers: z.array(z.number().int().min(1).max(5)).length(25),
   contextVersion: z.string().max(20).default('1.0'),
   consentVersion: z.string().max(40).optional(),
+  participantData: z.object({
+    birthDate:z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/),
+    sex:z.enum(['M','F']),
+    licenseCategory:z.enum(['NONE','ACC','A','B','C','D','E','AB','AC','AD','AE']).nullable().optional(),
+    city:z.string().trim().min(2).max(100),
+    state:z.string().trim().length(2).transform(v=>v.toUpperCase()),
+    country:z.literal('BR').default('BR'),
+    institutionType:z.enum(['INDEPENDENT','SCHOOL','COMPANY','PUBLIC_AGENCY','UNIVERSITY','RESEARCH_CENTER','COMMUNITY','OTHER']),
+    institutionName:z.string().trim().max(180).nullable().optional(),
+    groupSector:z.string().trim().max(120).nullable().optional(),
+  }).optional(),
 }).strict();
 
 app.get('/api/instrument-results', authenticate, asyncRoute(async (req,res) => {
@@ -331,6 +342,12 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
   const existing = await prisma.instrumentAssessment.findUnique({ where: { id: data.id } });
   if (existing) return res.status(409).json({ error: 'Identificador de avaliação já utilizado.' });
   const participant = await prisma.user.findUnique({where:{id:req.authUser!.id},select:{groupId:true,group:{select:{institutionId:true,city:true,state:true,institution:{select:{city:true,state:true}}}}}});
+  const profile = data.participantData;
+  if(profile && new Date(profile.birthDate).toISOString().slice(0,10)!==profile.birthDate)return res.status(400).json({error:'Data de nascimento inválida.'});
+  if(profile && new Date(profile.birthDate)>new Date())return res.status(400).json({error:'A data de nascimento não pode estar no futuro.'});
+  const linkedInstitution = profile?.institutionName && profile.institutionType!=='INDEPENDENT' && ['SCHOOL','COMPANY','PUBLIC_AGENCY','RESEARCH_CENTER','OTHER'].includes(profile.institutionType)
+    ? await prisma.institution.findFirst({where:{active:true,name:{equals:profile.institutionName,mode:'insensitive'},city:{equals:profile.city,mode:'insensitive'},state:profile.state,type:profile.institutionType as any},select:{id:true}})
+    : null;
   const scored = scoreDothp(data.answers, data.context);
   const result = await prisma.instrumentAssessment.create({
     data: {
@@ -340,9 +357,15 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
       context: data.context,
       contextVersion: data.contextVersion,
       groupId: participant?.groupId || null,
-      institutionId: participant?.group?.institutionId || null,
-      city: participant?.group?.city || participant?.group?.institution?.city || null,
-      state: participant?.group?.state || participant?.group?.institution?.state || null,
+      institutionId: linkedInstitution?.id || (profile ? null : participant?.group?.institutionId || null),
+      city: profile?.city || participant?.group?.city || participant?.group?.institution?.city || null,
+      state: profile?.state || participant?.group?.state || participant?.group?.institution?.state || null,
+      birthDate: profile ? new Date(profile.birthDate+'T00:00:00.000Z') : null,
+      sex: profile?.sex || null,
+      licenseCategory: profile?.licenseCategory || null,
+      institutionType: profile?.institutionType || null,
+      institutionName: profile?.institutionName || null,
+      groupSector: profile?.groupSector || null,
       consentVersion: data.consentVersion || null,
       consentedAt: data.consentVersion ? new Date() : null,
       completedAt: new Date(),
