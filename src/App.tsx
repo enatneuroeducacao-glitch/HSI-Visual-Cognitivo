@@ -429,9 +429,7 @@ function App() {
     return (
       <main className="login-screen">
         <div className="login-card">
-          <div className="brand-mark">
-            H<span>V</span>
-          </div>
+          <img className="login-brand-logo" src="/assets/hsi-visual-cognitivo.webp" alt="HSI Visual Cognitivo" />
           <p className="eyebrow">ENAT · PESQUISA E DESENVOLVIMENTO</p>
           <h1>HSI Visual Cognitivo</h1>
           <p className="muted">
@@ -492,13 +490,7 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand-lockup">
-          <div className="brand-mark small">
-            H<span>V</span>
-          </div>
-          <div>
-            <strong>HSI Visual</strong>
-            <small>COGNITIVO</small>
-          </div>
+          <img className="sidebar-brand-logo" src="/assets/hsi-visual-cognitivo.webp" alt="HSI Visual Cognitivo" />
         </div>
         <div className="side-label">AMBIENTE</div>
         <button
