@@ -122,6 +122,12 @@ model InstrumentAssessment {
   contextVersion String @default("1.0")
   consentVersion String?
   consentedAt    DateTime?
+  birthDate      DateTime? @db.Date
+  sex            String?  @db.VarChar(1)
+  licenseCategory String?
+  institutionType String?
+  institutionName String?
+  groupSector     String?
 
   @@index([userId, completedAt])
   @@index([instrument, completedAt])
