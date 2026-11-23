@@ -78,7 +78,7 @@ const publicUser = (u: AuthUser) => ({
   id: u.id, name: u.publicAccess ? 'Participante público' : u.name,
   email: u.publicAccess ? null : u.email, role: u.role, status: u.status,
   participantCode: u.participantCode, groupId: u.groupId, publicAccess: Boolean(u.publicAccess),
-  researchProfile: u.publicAccess ? {
+  researchProfile: (u.publicAccess || u.birthDate || u.sex || u.city || u.state || u.institutionType) ? {
     birthDate: u.birthDate ? u.birthDate.toISOString().slice(0, 10) : null,
     sex: u.sex, licenseCategory: u.licenseCategory, city: u.city, state: u.state,
     institutionType: u.institutionType, institutionName: u.institutionName, groupSector: u.groupSector,
@@ -222,6 +222,48 @@ app.patch('/api/public/research-consent', authenticate, asyncRoute(async (req, r
   await prisma.auditLog.create({ data: {
     actorId: user.id, action: enabled ? 'PUBLIC_RESEARCH_CONSENT_GRANTED' : 'PUBLIC_RESEARCH_CONSENT_WITHDRAWN',
     targetType: 'USER', targetId: user.id, metadata: { researchConsent: enabled }
+  }});
+  return res.json({ user: publicUser(user as AuthUser) });
+}));
+
+const researchProfileSchema = z.object({
+  birthDate: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/),
+  sex: z.enum(['M','F']),
+  licenseCategory: z.enum(['NONE','ACC','A','B','C','D','E','AB','AC','AD','AE']).nullable().optional(),
+  city: z.string().trim().min(2).max(100),
+  state: z.enum(['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO']),
+  institutionType: z.enum(['INDEPENDENT','SCHOOL','COMPANY','PUBLIC_AGENCY','UNIVERSITY','RESEARCH_CENTER','COMMUNITY','OTHER']),
+  institutionName: z.string().trim().max(180).nullable().optional(),
+  groupSector: z.string().trim().max(120).nullable().optional(),
+  privacyNoticeVersion: z.literal('ENAT-PRIVACY-1.0'),
+  researchConsent: z.boolean().default(false)
+}).strict();
+
+app.patch('/api/auth/research-profile', authenticate, asyncRoute(async (req, res) => {
+  const parsed = researchProfileSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Confira os dados obrigatórios do cadastro de pesquisa.', details: parsed.error.flatten() });
+  const data = parsed.data;
+  const birthDate = new Date(data.birthDate + 'T00:00:00.000Z');
+  if (!Number.isFinite(birthDate.getTime()) || birthDate.toISOString().slice(0,10) !== data.birthDate || birthDate > new Date()) {
+    return res.status(400).json({ error: 'Informe uma data de nascimento válida.' });
+  }
+  if (data.institutionType === 'INDEPENDENT' && data.institutionName?.trim()) {
+    return res.status(400).json({ error: 'O nome da instituição só pode ser informado quando houver vínculo institucional.' });
+  }
+  const user = await prisma.user.update({
+    where: { id: req.authUser!.id },
+    data: {
+      birthDate, sex: data.sex, city: data.city, state: data.state,
+      licenseCategory: data.licenseCategory || null, institutionType: data.institutionType,
+      institutionName: data.institutionName?.trim() || null, groupSector: data.groupSector?.trim() || null,
+      privacyNoticeVersion: data.privacyNoticeVersion, privacyAcknowledgedAt: new Date(),
+      researchConsentVersion: data.researchConsent ? 'ENAT-RESEARCH-1.0' : null,
+      researchConsentedAt: data.researchConsent ? new Date() : null
+    }
+  });
+  await prisma.auditLog.create({ data: {
+    actorId: user.id, action: 'RESEARCH_PROFILE_UPDATED', targetType: 'USER', targetId: user.id,
+    metadata: { researchConsent: data.researchConsent, privacyNoticeVersion: data.privacyNoticeVersion }
   }});
   return res.json({ user: publicUser(user as AuthUser) });
 }));

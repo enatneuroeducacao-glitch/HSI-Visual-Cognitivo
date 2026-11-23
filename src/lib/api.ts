@@ -79,5 +79,8 @@ export const publicAccess = {
   },
   async updateResearchConsent(researchConsent: boolean) {
     return api.patch('/api/public/research-consent', { researchConsent });
+  },
+  async updateResearchProfile(profile: Record<string, unknown>) {
+    return api.patch('/api/auth/research-profile', profile);
   }
 };
