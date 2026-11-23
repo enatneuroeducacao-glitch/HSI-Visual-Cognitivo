@@ -450,7 +450,7 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
       applicationNumber,applicationType:applicationNumber===1?'BASELINE':'REEVALUATION',
       studyCode:null,instrumentVersion:d.instrumentVersion
     }});
-    await tx.auditLog.create({data:{actorId:req.authUser!.id,action:'ASSESSMENT_SUBMIT',targetType:'RESULT',targetId:created.id,metadata:{applicationNumber,applicationType:created.applicationType,studyCode}}});
+    await tx.auditLog.create({data:{actorId:req.authUser!.id,action:'ASSESSMENT_SUBMIT',targetType:'RESULT',targetId:created.id,metadata:{applicationNumber,applicationType:created.applicationType}}});
     return created;
   }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable}));
   res.status(201).json({result});
@@ -464,7 +464,7 @@ const instrumentResultSchema = z.object({
   answers: z.array(z.number().int().min(1).max(5)).length(25),
   contextVersion: z.string().max(20).default('1.0'),
   instrumentVersion: z.string().trim().min(1).max(20).default('1.0'),
-  studyCode: z.string().trim().min(2).max(80).optional(),
+
   consentVersion: z.string().max(40).optional(),
   participantData: z.object({
     birthDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -558,7 +558,7 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
       dimensions: scored.dimensions as Prisma.InputJsonValue,
     },
     });
-    await tx.auditLog.create({ data: { actorId: req.authUser!.id, action: 'INSTRUMENT_SUBMIT', targetType: 'INSTRUMENT_RESULT', targetId: created.id, metadata: { instrument: data.instrument, context: data.context, applicationNumber, applicationType:created.applicationType, studyCode } } });
+    await tx.auditLog.create({ data: { actorId: req.authUser!.id, action: 'INSTRUMENT_SUBMIT', targetType: 'INSTRUMENT_RESULT', targetId: created.id, metadata: { instrument: data.instrument, context: data.context, applicationNumber, applicationType:created.applicationType } } });
     return created;
   }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable}));
   res.status(201).json({ result: { ...result, completedAt: result.completedAt.toISOString() } });
