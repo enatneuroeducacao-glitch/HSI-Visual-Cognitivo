@@ -301,6 +301,29 @@ app.get('/api/instrument-results', authenticate, asyncRoute(async (req,res) => {
   res.json({ results: rows.map(row => ({ ...row, completedAt: row.completedAt.toISOString() })) });
 }));
 
+
+app.get('/api/instrument-results/longitudinal', authenticate, asyncRoute(async (req,res) => {
+  const [behavioral, cognitive] = await Promise.all([
+    prisma.instrumentAssessment.findMany({where:{userId:req.authUser!.id,instrument:'HSI-DOTH-P'},orderBy:{completedAt:'asc'},select:{id:true,context:true,contextVersion:true,completedAt:true,dimensions:true}}),
+    prisma.assessmentResult.findMany({where:{userId:req.authUser!.id},orderBy:{completedAt:'asc'},select:{id:true,mode:true,completedAt:true,accuracy:true,correct:true,totalQuestions:true,axes:true}})
+  ]);
+  const labels:Record<string,string>={cotidiano:'Vida cotidiana e relações pessoais',trabalho:'Trabalho e ambiente profissional',educacao:'Estudos e aprendizagem',familia:'Família e convivência',social:'Comunidade e participação social',digital:'Ambientes digitais',transito:'Mobilidade e trânsito',integrado:'Diferentes contextos da vida'};
+  const normalized=behavioral.map(row=>({id:row.id,context:row.context,contextLabel:labels[row.context]||row.context,contextVersion:row.contextVersion,completedAt:row.completedAt.toISOString(),dimensions:(row.dimensions as Array<Record<string,unknown>>).map(d=>({id:String(d.id||'unknown'),name:String(d.name||d.id||'Dimensão'),score:Number(d.score||0),mean:Number(d.mean||0)}))}));
+  const previousByContext=new Map<string,typeof normalized[number]>();
+  const behavioralTimeline=normalized.map(row=>{
+    const previous=previousByContext.get(row.context);
+    const comparison=row.dimensions.map(d=>{const old=previous?.dimensions.find(x=>x.id===d.id);return{dimensionId:d.id,score:d.score,previousScore:old?.score??null,difference:old?d.score-old.score:null};});
+    previousByContext.set(row.context,row);
+    return{...row,comparisonWithPreviousSameContext:comparison};
+  });
+  const contexts=[...new Set(normalized.map(row=>row.context))].map(context=>{
+    const rows=normalized.filter(row=>row.context===context),latest=rows[rows.length-1];
+    return{context,label:labels[context]||context,applications:rows.length,firstCompletedAt:rows[0].completedAt,latestCompletedAt:latest.completedAt,dimensions:latest.dimensions.map(d=>{const values=rows.map(r=>r.dimensions.find(x=>x.id===d.id)?.score).filter((v):v is number=>typeof v==='number');return{id:d.id,name:d.name,latestScore:d.score,meanAcrossApplications:values.length?Math.round(values.reduce((a,b)=>a+b,0)/values.length):null,observations:values.length};})};
+  });
+  const cognitiveTimeline=cognitive.map(row=>({id:row.id,mode:row.mode,completedAt:row.completedAt.toISOString(),accuracy:row.accuracy,correct:row.correct,totalQuestions:row.totalQuestions,axes:row.axes}));
+  res.json({generatedAt:new Date().toISOString(),methodology:{behavioralInstrument:'HSI-DOTH-P',cognitiveInstrument:'HSI Visual Cognitivo',scalesCombined:false,causalInference:false,note:'As séries comportamental e cognitiva são apresentadas separadamente. Diferenças entre aplicações são descritivas e não comprovam mudança estável, validade preditiva ou causalidade.'},totals:{behavioralApplications:behavioral.length,cognitiveApplications:cognitive.length},contexts,behavioralTimeline,cognitiveTimeline});
+}));
+
 app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => {
   const parsed = instrumentResultSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Questionário incompleto ou dados inválidos.', details: parsed.error.flatten() });
@@ -467,11 +490,19 @@ async function getResearchAggregate(query:Record<string,unknown>){
     }
   }
   const dimensionRows=[...dims.entries()].map(([id,v])=>({id,name:v.name,score:Math.round(v.sum/v.count),applications:v.count}));
+  const stateMap=new Map<string,{count:number;users:Set<string>;scores:Map<string,{sum:number;count:number}>}>();
+  for(const city of geo.values()){
+    const state=stateMap.get(city.state)||{count:0,users:new Set<string>(),scores:new Map<string,{sum:number;count:number}>()};
+    state.count+=city.count;for(const userId of city.users)state.users.add(userId);
+    for(const [dimensionId,value] of city.scores.entries()){const score=state.scores.get(dimensionId)||{sum:0,count:0};score.sum+=value.sum;score.count+=value.count;state.scores.set(dimensionId,score);}
+    stateMap.set(city.state,state);
+  }
+  const stateRows=[...stateMap.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([state,v])=>({id:state,state,count:v.count,participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))}));
   const geographyRows=[...geo.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([id,v])=>({id,state:v.state,city:v.city,count:v.count,participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))}));
   const institutionRows=[...orgs.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([id,v])=>({id,name:v.name,type:v.type,city:v.city,state:v.state,count:v.count,participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))}));
   const timelineRows=[...timeline.values()].filter(v=>v.users.size>=minimumGroupSize).sort((a,b)=>a.period.localeCompare(b.period)).map(v=>({period:v.period,assessments:v.count,participants:v.users.size,dimensions:[...v.scores.entries()].map(([dimensionId,s])=>({dimensionId,score:Math.round(s.sum/s.count)}))}));
   const contextRows=[...contexts.entries()].filter(([,v])=>v.users.size>=minimumGroupSize).map(([context,v])=>({context,assessments:v.count,participants:v.users.size}));
-  return {privacy:{suppressed:false,minimumGroupSize,distinctParticipants:participants},generatedAt:new Date().toISOString(),period:{from:from.toISOString(),to:to.toISOString()},totals:{assessments:rows.length,participants},dimensions:dimensionRows,timeline:timelineRows,contexts:contextRows,geography:geographyRows,institutions:institutionRows};
+  return {privacy:{suppressed:false,minimumGroupSize,distinctParticipants:participants},generatedAt:new Date().toISOString(),period:{from:from.toISOString(),to:to.toISOString()},totals:{assessments:rows.length,participants},dimensions:dimensionRows,timeline:timelineRows,contexts:contextRows,geography:geographyRows,states:stateRows,institutions:institutionRows};
 }
 app.get('/api/research/aggregate', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res)=>{
   const aggregate=await getResearchAggregate(req.query as Record<string,unknown>);
@@ -483,6 +514,7 @@ app.get('/api/research/export.csv', authenticate, allow(UserRole.ADMIN,UserRole.
   const rows:string[][]=[['tipo','codigo','dimensao','pontuacao_media','aplicacoes','participantes']];
   for(const d of aggregate.dimensions)rows.push(['geral','TODOS',d.name,String(d.score),String(d.applications),String(aggregate.totals.participants)]);
   for(const g of aggregate.geography)for(const d of g.dimensions)rows.push(['municipio',g.state+'-'+g.city,d.dimensionId,String(d.score),String(g.count),String(g.participants)]);
+  for(const s of aggregate.states)for(const d of s.dimensions)rows.push(['estado',s.state,d.dimensionId,String(d.score),String(s.count),String(s.participants)]);
   for(const o of aggregate.institutions)for(const d of o.dimensions)rows.push(['instituicao',o.name,d.dimensionId,String(d.score),String(o.count),String(o.participants)]);
   const csv=rows.map(row=>row.map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(';')).join('\\n');
   res.setHeader('Content-Type','text/csv; charset=utf-8');
