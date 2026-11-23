@@ -651,6 +651,116 @@ app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN,UserRole.ANALY
   });
 }));
 
+
+
+app.get('/api/admin/national-analytics', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res) => {
+  const from = typeof req.query.from === 'string' ? new Date(req.query.from) : new Date(Date.now()-365*86400000);
+  const to = typeof req.query.to === 'string' ? new Date(req.query.to) : new Date();
+  if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from > to) return res.status(400).json({error:'Período inválido.'});
+  const minimumGroupSize = 5;
+  const userFilter = {OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]};
+  const [cognitiveRows,behavioralRows] = await Promise.all([
+    prisma.assessmentResult.findMany({where:{completedAt:{gte:from,lte:to},user:userFilter},select:{userId:true,completedAt:true,totalQuestions:true,correct:true,axes:true,answerDetails:true,user:{select:{city:true,state:true,institutionName:true,institutionType:true}}}}),
+    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:userFilter},select:{userId:true,completedAt:true,context:true,dimensions:true,answers:true,city:true,state:true,institutionName:true,institutionType:true,institution:{select:{name:true,type:true,city:true,state:true}}}})
+  ]);
+  const build = (rows:any[], kind:'cognitive'|'behavioral') => {
+    const users = new Set(rows.map(row=>row.userId));
+    const suppressed = users.size < minimumGroupSize;
+    const geo = new Map<string,any>();
+    const months = new Map<string,any>();
+    const dimensions = new Map<string,any>();
+    const axes = new Map<string,any>();
+    const contexts = new Map<string,any>();
+    const likert = [0,0,0,0,0];
+    const quality = {uniformResponseApplications:0,concentratedResponseApplications:0};
+    const responseTimes = {under3:0,from3to5:0,from6to10:0,over10:0};
+    for (const row of rows) {
+      const monthKey=row.completedAt.toISOString().slice(0,7);
+      const month=months.get(monthKey)||{period:monthKey,applications:0,users:new Set<string>(),correct:0,total:0};
+      month.applications++;month.users.add(row.userId);
+      if(kind==='cognitive'){month.correct+=row.correct;month.total+=row.totalQuestions;}
+      months.set(monthKey,month);
+      if(kind==='cognitive'){
+        for(const raw of row.axes as Array<Record<string,unknown>>){
+          const id=String(raw.axisId||'unknown');
+          const a=axes.get(id)||{id,title:String(raw.title||id),correct:0,total:0,seconds:0,attempts:0,fastErrors:0,slowCorrect:0};
+          a.correct+=Number(raw.correct||0);a.total+=Number(raw.total||0);a.seconds+=Number(raw.averageSeconds||0);a.attempts++;axes.set(id,a);
+        }
+        for(const answer of row.answerDetails as Array<Record<string,unknown>>){
+          const seconds=Number(answer.seconds||0);
+          if(seconds<3)responseTimes.under3++;else if(seconds<=5)responseTimes.from3to5++;else if(seconds<=10)responseTimes.from6to10++;else responseTimes.over10++;
+          const a=axes.get(String(answer.axisId||''));
+          if(a&&answer.correct===false&&seconds<=5)a.fastErrors++;
+          if(a&&answer.correct===true&&seconds>=15)a.slowCorrect++;
+        }
+      }else{
+        const c=contexts.get(row.context)||{context:row.context,applications:0,users:new Set<string>()};c.applications++;c.users.add(row.userId);contexts.set(row.context,c);
+        const values=(row.answers as Array<Record<string,unknown>>).map(a=>Number(a.scoredResponse||0)).filter(v=>v>=1&&v<=5);
+        const counts=[1,2,3,4,5].map(v=>values.filter(x=>x===v).length);
+        if(values.length===25&&new Set(values).size===1)quality.uniformResponseApplications++;
+        if(values.length&&Math.max(...counts)/values.length>=0.8)quality.concentratedResponseApplications++;
+        for(const a of row.answers as Array<Record<string,unknown>>){const v=Number(a.scoredResponse||0);if(v>=1&&v<=5)likert[v-1]++;}
+        for(const raw of row.dimensions as Array<Record<string,unknown>>){
+          const id=String(raw.id||'unknown');const d=dimensions.get(id)||{id,name:String(raw.name||id),sum:0,count:0,low:0,medium:0,high:0};
+          const score=Number(raw.score||0);d.sum+=score;d.count++;if(score<34)d.low++;else if(score<67)d.medium++;else d.high++;dimensions.set(id,d);
+        }
+      }
+      const profile=kind==='cognitive'?row.user:row;
+      const city=String(profile.city||profile.institution?.city||'').trim();
+      const state=String(profile.state||profile.institution?.state||'').trim().toUpperCase();
+      const institution=String(profile.institutionName||profile.institution?.name||'').trim();
+      const institutionType=String(profile.institutionType||profile.institution?.type||'OTHER');
+      const add=(key:string,label:string,type:string)=>{
+        const g=geo.get(key)||{id:key,label,type,state,city,applications:0,users:new Set<string>(),correct:0,total:0,dimensions:new Map<string,any>()};
+        g.applications++;g.users.add(row.userId);
+        if(kind==='cognitive'){g.correct+=row.correct;g.total+=row.totalQuestions;}
+        else for(const raw of row.dimensions as Array<Record<string,unknown>>){
+          const id=String(raw.id||'unknown');const d=g.dimensions.get(id)||{dimensionId:id,name:String(raw.name||id),sum:0,count:0};
+          d.sum+=Number(raw.score||0);d.count++;g.dimensions.set(id,d);
+        }
+        geo.set(key,g);
+      };
+      if(state)add('uf:'+state,state,'state');
+      if(state&&city)add('city:'+state+':'+city,city+'/'+state,'city');
+      if(state&&city&&institution&&institutionType!=='INDEPENDENT')add('institution:'+state+':'+city+':'+institutionType+':'+institution.toLowerCase(),institution+' · '+city+'/'+state,'institution');
+    }
+    const groupRows=(type:string)=>[...geo.values()].filter(g=>g.type===type&&g.users.size>=minimumGroupSize).map(g=>({id:g.id,label:g.label,state:g.state,city:g.city,applications:g.applications,participants:g.users.size,accuracy:g.total?Math.round(g.correct/g.total*100):null,dimensions:[...g.dimensions.values()].map(d=>({dimensionId:d.dimensionId,name:d.name,score:Math.round(d.sum/d.count)}))})).sort((a,b)=>b.participants-a.participants);
+    const monthly=[...months.values()].filter(m=>m.users.size>=minimumGroupSize).sort((a,b)=>a.period.localeCompare(b.period)).map(m=>({period:m.period,applications:m.applications,participants:m.users.size,accuracy:m.total?Math.round(m.correct/m.total*100):null}));
+    const total=kind==='cognitive'?rows.reduce((s,r)=>s+r.totalQuestions,0):0;
+    const correct=kind==='cognitive'?rows.reduce((s,r)=>s+r.correct,0):0;
+    return {
+      privacy:{suppressed,minimumGroupSize,distinctParticipants:users.size},
+      summary:suppressed?{participants:0,applications:0,correct:0,totalQuestions:0,accuracy:null}:{participants:users.size,applications:rows.length,correct:kind==='cognitive'?correct:null,totalQuestions:kind==='cognitive'?total:null,accuracy:kind==='cognitive'&&total?Math.round(correct/total*100):null},
+      monthly:suppressed?[]:monthly,states:suppressed?[]:groupRows('state'),cities:suppressed?[]:groupRows('city'),institutions:suppressed?[]:groupRows('institution'),
+      axes:suppressed?[]:[...axes.values()].map(a=>({id:a.id,title:a.title,correct:a.correct,total:a.total,accuracy:a.total?Math.round(a.correct/a.total*100):0,averageSeconds:a.attempts?Number((a.seconds/a.attempts).toFixed(1)):0,fastErrors:a.fastErrors,slowCorrect:a.slowCorrect})),
+      dimensions:suppressed?[]:[...dimensions.values()].map(d=>({id:d.id,name:d.name,score:d.count?Math.round(d.sum/d.count):0,applications:d.count,low:d.low,medium:d.medium,high:d.high})),
+      contexts:suppressed?[]:[...contexts.values()].filter(c=>c.users.size>=minimumGroupSize).map(c=>({context:c.context,applications:c.applications,participants:c.users.size})),
+      likert:suppressed?[]:likert.map((count,index)=>({value:index+1,count})),
+      quality:suppressed?{uniformResponseApplications:0,concentratedResponseApplications:0}:quality,
+      responseTimes:suppressed?{under3:0,from3to5:0,from6to10:0,over10:0}:responseTimes
+    };
+  };
+  const cognitive=build(cognitiveRows,'cognitive');
+  const behavioral=build(behavioralRows,'behavioral');
+  const participants=new Set([...cognitiveRows.map(r=>r.userId),...behavioralRows.map(r=>r.userId)]);
+  const recurring=new Set<string>();
+  for(const rows of [cognitiveRows,behavioralRows]){
+    const counts=new Map<string,number>();for(const row of rows)counts.set(row.userId,(counts.get(row.userId)||0)+1);
+    for(const [id,count] of counts)if(count>1)recurring.add(id);
+  }
+  const monthlyMap=new Map<string,any>();
+  for(const [rows,key] of [[cognitiveRows,'cognitiveApplications'],[behavioralRows,'behavioralApplications']] as const)for(const row of rows){
+    const period=row.completedAt.toISOString().slice(0,7);const m=monthlyMap.get(period)||{period,cognitiveApplications:0,behavioralApplications:0,users:new Set<string>()};m[key]++;m.users.add(row.userId);monthlyMap.set(period,m);
+  }
+  const executiveSuppressed=participants.size<minimumGroupSize;
+  const executiveMonthly=executiveSuppressed?[]:[...monthlyMap.values()].filter(m=>m.users.size>=minimumGroupSize).sort((a,b)=>a.period.localeCompare(b.period)).map(m=>({period:m.period,cognitiveApplications:m.cognitiveApplications,behavioralApplications:m.behavioralApplications,totalApplications:m.cognitiveApplications+m.behavioralApplications,participants:m.users.size}));
+  res.json({
+    generatedAt:new Date().toISOString(),period:{from:from.toISOString(),to:to.toISOString()},privacy:{minimumGroupSize,executiveSuppressed},
+    executive:executiveSuppressed?{participants:0,participantsRecurring:0,totalApplications:0,cognitiveApplications:0,behavioralApplications:0,monthly:[]}:{participants:participants.size,participantsRecurring:recurring.size,totalApplications:cognitiveRows.length+behavioralRows.length,cognitiveApplications:cognitiveRows.length,behavioralApplications:behavioralRows.length,monthly:executiveMonthly},
+    cognitive,behavioral
+  });
+}));
+
 const researchQuerySchema=z.object({
   from:z.string().datetime().optional(),
   to:z.string().datetime().optional(),

@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { api } from './lib/api';
 import ReportsCenter from './ReportsCenter';
 import ResearchCenter from './ResearchCenter';
+import AdvancedAnalytics from './AdvancedAnalytics';
 
 type Props = { role: 'ADMIN' | 'ANALYST' | 'PARTICIPANT' };
 type Person = { id:string; name:string; email:string; role:string; status:string; participantCode:string|null; groupId:string|null; group?:{name:string}|null };
@@ -25,7 +26,7 @@ function ResponseBars({data}:{data:NonNullable<Analytics['responseTimes']>}) {
 }
 
 export default function AdminPanel({role}:Props) {
- const [tab,setTab]=useState<'command'|'overview'|'participants'|'groups'|'reports'|'research'>('command');
+ const [tab,setTab]=useState<'command'|'intelligence'|'overview'|'participants'|'groups'|'reports'|'research'>('command');
  const [commandData,setCommandData]=useState<any>(null);
  const [from,setFrom]=useState(new Date(Date.now()-30*86400000).toISOString().slice(0,10));
  const [to,setTo]=useState(new Date().toISOString().slice(0,10));
@@ -94,6 +95,7 @@ export default function AdminPanel({role}:Props) {
   <div className="admin-heading"><div><span className="eyebrow">GESTÃO E INTELIGÊNCIA</span><h2>{role==='ADMIN'?'Central administrativa':'Painel de análise'}</h2><p>Indicadores coletivos e anônimos de todas as avaliações e respostas comportamentais.</p></div><button className="primary" onClick={()=>void load()} disabled={loading}>{loading?'Atualizando…':'Atualizar dados'}</button></div>
   <nav className="admin-tabs">
    {role==='ADMIN'&&<button className={tab==='command'?'selected':''} onClick={()=>setTab('command')}>Central de comando</button>}
+   {(role==='ADMIN'||role==='ANALYST')&&<button className={tab==='intelligence'?'selected':''} onClick={()=>setTab('intelligence')}>Inteligência avançada</button>}
    <button className={tab==='overview'?'selected':''} onClick={()=>setTab('overview')}>Visão coletiva</button>
    {role==='ADMIN'&&<button className={tab==='participants'?'selected':''} onClick={()=>setTab('participants')}>Participantes</button>}
    {role==='ADMIN'&&<button className={tab==='groups'?'selected':''} onClick={()=>setTab('groups')}>Grupos</button>}
@@ -108,6 +110,7 @@ export default function AdminPanel({role}:Props) {
    <div className="command-shortcuts"><button onClick={()=>setTab('participants')}>Gerenciar usuários <span>Contas, perfis e acessos →</span></button><button onClick={()=>setTab('groups')}>Gerenciar grupos <span>Organização dos participantes →</span></button><button onClick={()=>setTab('reports')}>Central de relatórios <span>Análises e exportações →</span></button><button onClick={()=>setTab('overview')}>Dados das avaliações <span>Indicadores e desempenho →</span></button></div>
    <div className="admin-section"><h3>Privacidade e governança</h3><p>Esta central apresenta somente indicadores estatísticos consolidados. Não exibe nomes, e-mails, códigos, identificadores, respostas individuais ou histórico individual.</p></div></>}
   </div>}
+  {tab==='intelligence'&&(role==='ADMIN'||role==='ANALYST')&&<AdvancedAnalytics/>}
   {tab==='overview'&&<div className="admin-content">
    <div className="filters"><label>De<input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>Até<input type="date" value={to} onChange={e=>setTo(e.target.value)}/></label><label>Grupo<select value={groupId} onChange={e=>setGroupId(e.target.value)}><option value="">Todos os grupos</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></label><button className="primary" onClick={()=>void load()}>Aplicar filtros</button><button className="secondary" onClick={()=>window.print()}>Imprimir relatório</button></div>
    {analytics&&<><div className="metric-grid"><article><small>AVALIAÇÕES</small><strong>{analytics.summary.assessments}</strong></article><article><small>PARTICIPANTES</small><strong>{analytics.summary.participants}</strong></article><article><small>QUESTÕES RESPONDIDAS</small><strong>{analytics.summary.totalQuestions}</strong></article><article><small>PRECISÃO AGREGADA</small><strong>{analytics.summary.accuracy}%</strong></article></div>
