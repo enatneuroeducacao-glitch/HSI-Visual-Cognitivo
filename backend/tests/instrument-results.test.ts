@@ -34,6 +34,8 @@ test('salva respostas completas do HSI-DOTH-P e calcula dimensões no servidor',
   assert.equal(response.body.result.answers.length, 25);
   assert.equal(response.body.result.dimensions.length, 5);
   assert.equal(response.body.result.dimensions.every((d: any) => d.score === 100), true);
+  assert.equal(response.body.result.applicationNumber, 1);
+  assert.equal(response.body.result.applicationType, 'BASELINE');
 });
 
 test('histórico comportamental retorna apenas avaliações da própria conta', async () => {
@@ -63,6 +65,8 @@ test('série longitudinal compara contextos e mantém instrumento cognitivo sepa
     .set('Authorization', auth)
     .send({ id: suffix + '-work', instrument: 'HSI-DOTH-P', context: 'trabalho', answers: Array(25).fill(4) });
   assert.equal(submitted.status, 201);
+  assert.equal(submitted.body.result.applicationNumber, 2);
+  assert.equal(submitted.body.result.applicationType, 'REEVALUATION');
   const response = await request(app).get('/api/instrument-results/longitudinal').set('Authorization', auth);
   assert.equal(response.status, 200);
   assert.equal(response.body.methodology.scalesCombined, false);
@@ -71,6 +75,8 @@ test('série longitudinal compara contextos e mantém instrumento cognitivo sepa
   assert.equal(Array.isArray(response.body.behavioralTimeline), true);
   assert.equal(Array.isArray(response.body.cognitiveTimeline), true);
   assert.equal(response.body.behavioralTimeline.every((item: any) => item.comparisonWithPreviousSameContext.length === 5), true);
+  assert.equal(response.body.behavioralTimeline[0].applicationNumber, 1);
+  assert.equal(response.body.behavioralTimeline[1].applicationNumber, 2);
 });
 
 test('série longitudinal exige autenticação e restringe os dados à própria conta', async () => {
@@ -84,7 +90,7 @@ test('registra dados sociodemográficos e vínculo institucional declarado sem e
   const participantData = { birthDate:'1990-04-12', sex:'F', licenseCategory:'B', city:'Joinville', state:'SC', country:'BR', institutionType:'SCHOOL', institutionName:'Escola de Pesquisa ENAT', groupSector:'Ensino médio' };
   const response = await request(app).post('/api/instrument-results')
     .set('Authorization', 'Bearer ' + token())
-    .send({ id:suffix+'-profile', instrument:'HSI-DOTH-P', context:'educacao', answers:Array(25).fill(3), participantData });
+    .send({ id:suffix+'-profile', instrument:'HSI-DOTH-P', context:'educacao', answers:Array(25).fill(3), studyCode:'ENAT-PILOTO-01', instrumentVersion:'1.2', participantData });
   assert.equal(response.status, 201);
   assert.equal(response.body.result.city, 'Joinville');
   assert.equal(response.body.result.state, 'SC');
@@ -93,6 +99,9 @@ test('registra dados sociodemográficos e vínculo institucional declarado sem e
   assert.equal(response.body.result.institutionType, 'SCHOOL');
   assert.equal(response.body.result.institutionName, 'Escola de Pesquisa ENAT');
   assert.equal(response.body.result.institutionId, null);
+  assert.equal(response.body.result.applicationType, 'EXPERIMENTAL');
+  assert.equal(response.body.result.studyCode, 'ENAT-PILOTO-01');
+  assert.equal(response.body.result.instrumentVersion, '1.2');
 });
 
 test('rejeita sexo fora de M/F e UF inválida nos dados do respondente', async () => {
