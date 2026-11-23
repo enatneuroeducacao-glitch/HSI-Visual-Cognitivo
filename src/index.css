@@ -1301,3 +1301,6 @@ button:disabled {
 @media(max-width:650px){
   .dothp-profile-grid{grid-template-columns:minmax(0,1fr)}
 }
+
+.login-brand-logo{display:block;width:min(100%,300px);height:auto;object-fit:contain;margin:0 auto 24px}.sidebar-brand-logo{display:block;width:100%;max-width:195px;height:auto;object-fit:contain}.brand-lockup{justify-content:flex-start}
+@media(max-width:720px){.sidebar-brand-logo{width:150px;max-width:150px}.brand-lockup{padding:0}}
