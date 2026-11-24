@@ -12,6 +12,7 @@ import { Prisma } from '@prisma/client';
 import { questions } from './question-bank.js';
 import { scoreDothp } from './instrument-scoring.js';
 import { hasRole, validateAssessmentMode } from './security.js';
+import { analyzeDataQuality } from './data-quality.js';
 
 async function sendPasswordResetEmail(to: string, rawToken: string) {
   const apiKey = process.env.BREVO_API_KEY;
@@ -868,6 +869,19 @@ app.post('/api/advisor', authenticate, asyncRoute(async (req, res) => {
     return item.title + ': ' + item.correct + '/' + item.total + ' acertos (' + pct + '%). Sugestão educativa: ' + suggestion + '.';
   });
   res.json({ guidance: 'Orientação educativa automatizada, baseada apenas nos resultados registrados nesta conta. Não constitui avaliação clínica ou de aptidão para dirigir.\\n\\n' + guidance.join('\\n') });
+}));
+
+
+app.get('/api/admin/data-quality', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res) => {
+  const from=typeof req.query.from==='string'?new Date(req.query.from):new Date(Date.now()-365*86400000);
+  const to=typeof req.query.to==='string'?new Date(req.query.to):new Date();
+  if(!Number.isFinite(from.getTime())||!Number.isFinite(to.getTime())||from>to)return res.status(400).json({error:'Período inválido.'});
+  const userFilter={OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]};
+  const [cognitive,behavioral]=await Promise.all([
+    prisma.assessmentResult.findMany({where:{completedAt:{gte:from,lte:to},user:userFilter},select:{userId:true,durationSeconds:true,totalQuestions:true,answerDetails:true,completedAt:true,instrumentVersion:true,mode:true,accuracy:true}}),
+    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:userFilter},select:{userId:true,answers:true,dimensions:true,completedAt:true,context:true,contextVersion:true,instrumentVersion:true,state:true,city:true,institutionType:true}})
+  ]);
+  res.json(analyzeDataQuality(cognitive,behavioral,5));
 }));
 
 app.use((err: unknown,_req:Request,res:Response,_next:NextFunction) => {
