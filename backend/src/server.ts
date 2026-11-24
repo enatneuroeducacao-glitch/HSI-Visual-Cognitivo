@@ -624,10 +624,7 @@ app.get('/api/analytics', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), 
   const to = typeof req.query.to === 'string' ? new Date(req.query.to) : new Date();
   const groupId = typeof req.query.groupId === 'string' ? req.query.groupId : undefined;
   if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from > to) return res.status(400).json({error:'Período inválido.'});
-  const where = {
-    completedAt:{gte:from,lte:to},
-    user:{ ...(groupId ? {groupId} : {}), OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}] }
-  };
+  const where = { completedAt:{gte:from,lte:to}, researchConsentGranted:true, user:{ ...(groupId ? {groupId} : {}) } };
   const rows=await prisma.assessmentResult.findMany({where,select:{userId:true,mode:true,totalQuestions:true,correct:true,durationSeconds:true,axes:true,answerDetails:true,completedAt:true}});
   const totalQuestions=rows.reduce((sum,row)=>sum+row.totalQuestions,0);
   const correct=rows.reduce((sum,row)=>sum+row.correct,0);
@@ -927,10 +924,9 @@ app.get('/api/admin/data-quality', authenticate, allow(UserRole.ADMIN,UserRole.A
   const from=typeof req.query.from==='string'?new Date(req.query.from):new Date(Date.now()-365*86400000);
   const to=typeof req.query.to==='string'?new Date(req.query.to):new Date();
   if(!Number.isFinite(from.getTime())||!Number.isFinite(to.getTime())||from>to)return res.status(400).json({error:'Período inválido.'});
-  const userFilter={researchConsentGranted:true};
   const [cognitive,behavioral]=await Promise.all([
-    prisma.assessmentResult.findMany({where:{completedAt:{gte:from,lte:to},user:userFilter},select:{userId:true,durationSeconds:true,totalQuestions:true,answerDetails:true,completedAt:true,instrumentVersion:true,mode:true,accuracy:true}}),
-    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:userFilter},select:{userId:true,answers:true,dimensions:true,completedAt:true,context:true,contextVersion:true,instrumentVersion:true,state:true,city:true,institutionType:true}})
+    prisma.assessmentResult.findMany({where:{completedAt:{gte:from,lte:to},researchConsentGranted:true},select:{userId:true,durationSeconds:true,totalQuestions:true,answerDetails:true,completedAt:true,instrumentVersion:true,mode:true,accuracy:true}}),
+    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},researchConsentGranted:true},select:{userId:true,answers:true,dimensions:true,completedAt:true,context:true,contextVersion:true,instrumentVersion:true,state:true,city:true,institutionType:true}})
   ]);
   res.json(analyzeDataQuality(cognitive,behavioral,5));
 }));
