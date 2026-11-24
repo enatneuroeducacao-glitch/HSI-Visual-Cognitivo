@@ -913,7 +913,7 @@ app.get('/api/admin/data-quality', authenticate, allow(UserRole.ADMIN,UserRole.A
 /* Scientific governance: immutable instrument versions, protocols and study cohorts. */
 const instrumentNames = ['HSI-DOTH-P','HSI Visual Cognitivo'] as const;
 const scoringCriteriaFor = (instrument:string) => instrument==='HSI-DOTH-P'
-  ? {scale:'Likert 1–5',reverseItems:[4,9,14,19,24],dimensions:dothpDimensions,formula:'score = round((mean(scored responses) - 1) × 25)',bands:{low:'<34',medium:'34–66',high:'>=67'},contextualized:true}
+  ? {scale:{label:'Likert 1–5',min:1,max:5},scoreRange:{min:0,max:100},reverseItems:[4,9,14,19,24],dimensions:dothpDimensions,formula:'score = round((mean(scored responses) - scale.min) / (scale.max - scale.min) × scoreRange.max)',bands:{low:{maxExclusive:34},medium:{min:34,maxExclusive:67},high:{min:67}},contextualized:true}
   : {method:'structured visual/cognitive tasks',axes:['logic','attention','patterns','anticipation','risk','decision'],axisWeights:{logic:1,attention:1,patterns:1,anticipation:1,risk:1,decision:1},formula:'weightedAccuracy = weighted mean of axis accuracies',timeMetric:'seconds per item',diagnosticUse:false};
 const questionsFor = (instrument:string) => instrument==='HSI-DOTH-P'
   ? dothpItems.map(([dimension,prompt],index)=>({id:'dothp-'+(index+1),dimension,prompt,reverseScored:[3,8,13,18,23].includes(index)}))
