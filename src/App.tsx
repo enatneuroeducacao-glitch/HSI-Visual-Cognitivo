@@ -478,6 +478,9 @@ function App() {
         >
           ⌂ <span>Painel inicial</span>
         </button>
+        <button className={view === 'cognitive-intro' || view === 'test' || view === 'result' || view === 'report' ? 'nav-item active' : 'nav-item'} onClick={() => setView('cognitive-intro')}>
+          ▦ <span>HSI Visual Cognitivo</span>
+        </button>
         <button className={view === 'dothp' || view === 'dothp-intro' ? 'nav-item active' : 'nav-item'} onClick={() => { if (!user?.researchProfile?.birthDate || user?.researchProfile?.privacyNoticeVersion !== 'ENAT-PRIVACY-1.1') { setSaveError('Complete o cadastro e confirme o aviso de privacidade atualizado no painel inicial.'); setView('home'); return; } setView('dothp-intro'); }}>
           ◉ <span>HSI-DOTH-P comportamental</span>
         </button>
@@ -657,7 +660,7 @@ function App() {
                     onClick={nextQuestion}
                   >
                     {index + 1 === runQuestions.length
-                      ? 'Concluir sessão'
+                      ? 'Revisar e concluir'
                       : 'Próxima questão'}{' '}
                     →
                   </button>
@@ -945,6 +948,19 @@ function App() {
           </section>
         )}
       </main>
+      {finishConfirmation && (
+        <div className="participant-modal-backdrop" role="presentation">
+          <section className="participant-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="finish-confirm-title">
+            <span className="eyebrow">CONFIRMAÇÃO DE ENVIO</span>
+            <h2 id="finish-confirm-title">Deseja finalizar esta avaliação?</h2>
+            <p>Você respondeu aos {pendingFinalAnswers.length} exercícios. Ao confirmar, suas respostas serão enviadas para cálculo e registro do resultado individual.</p>
+            <div className="participant-modal-actions">
+              <button className="participant-secondary" onClick={() => setFinishConfirmation(false)} disabled={saving}>Voltar e revisar</button>
+              <button className="participant-primary" onClick={async()=>{setFinishConfirmation(false);await finishTest(pendingFinalAnswers);}} disabled={saving}>{saving?'Salvando…':'Confirmar e finalizar'}</button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
