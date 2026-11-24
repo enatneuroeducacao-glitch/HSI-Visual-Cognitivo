@@ -1128,6 +1128,48 @@ app.get('/api/science/audit',authenticate,allow(UserRole.ADMIN,UserRole.ANALYST)
  res.json({events:rows});
 }));
 
+
+/* Scientific validation evidence registry. Records evidence; never grants psychometric validation automatically. */
+const validationEvidenceSchema=z.object({
+ instrument:z.enum(['HSI-DOTH-P','HSI Visual Cognitivo']),
+ evidenceType:z.enum(['RELIABILITY','INTERNAL_CONSISTENCY','CONTENT_VALIDITY','CONSTRUCT_VALIDITY','INDICATOR_VALIDITY','GROUP_BIAS','COGNITIVE_TASK_ADEQUACY','TEST_RETEST','SAMPLE_REPRESENTATIVENESS','ETHICS_REVIEW']),
+ title:z.string().trim().min(5).max(180),
+ versionScope:z.string().trim().min(1).max(80),
+ studyCode:z.string().trim().max(40).optional(),
+ protocolReference:z.string().trim().max(180).optional(),
+ methodDescription:z.string().trim().min(10).max(5000),
+ population:z.string().trim().min(5).max(1000),
+ sampleSize:z.number().int().min(0).max(1000000),
+ sampleDescription:z.string().trim().min(5).max(2000),
+ findings:z.string().trim().min(5).max(5000),
+ interpretation:z.string().trim().min(5).max(5000),
+ limitations:z.string().trim().min(5).max(5000),
+ ethicalStatus:z.enum(['NOT_ASSESSED','PENDING','APPROVED','WAIVED','NOT_APPLICABLE']).default('NOT_ASSESSED'),
+ ethicsReference:z.string().trim().max(180).optional(),
+ status:z.enum(['PLANNED','IN_PROGRESS','COMPLETED','UNDER_REVIEW']).default('PLANNED')
+}).strict().superRefine((value,ctx)=>{if(['WAIVED','NOT_APPLICABLE'].includes(value.ethicalStatus)&&!value.ethicsReference?.trim())ctx.addIssue({code:'custom',path:['ethicsReference'],message:'Informe a justificativa formal para dispensa ou não aplicabilidade da revisão ética.'});if(value.sampleSize>0&&!value.sampleDescription.trim())ctx.addIssue({code:'custom',path:['sampleDescription'],message:'Descreva a composição e o recrutamento da amostra.'});});
+app.get('/api/science/validation-evidence',authenticate,allow(UserRole.ADMIN,UserRole.ANALYST),asyncRoute(async(_req,res)=>{
+ const evidence=await prisma.scientificValidationEvidence.findMany({orderBy:[{instrument:'asc'},{createdAt:'desc'}]});
+ res.json({evidence,scientificStatus:{'HSI-DOTH-P':'EXPERIMENTAL_NOT_PSYCHOMETRICALLY_VALIDATED','HSI Visual Cognitivo':'EXPERIMENTAL_NOT_PSYCHOMETRICALLY_VALIDATED'},notice:'O registro de evidências não equivale à validação psicométrica. Não há autorização automática para diagnóstico, normas populacionais ou avaliação de aptidão.'});
+}));
+app.post('/api/science/validation-evidence',authenticate,allow(UserRole.ADMIN,UserRole.ANALYST),asyncRoute(async(req,res)=>{
+ const parsed=validationEvidenceSchema.safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:'Registro de evidência incompleto ou inválido.',details:parsed.error.flatten()});
+ const row=await prisma.scientificValidationEvidence.create({data:{...parsed.data,createdBy:req.authUser!.id}});
+ await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'SCIENTIFIC_VALIDATION_EVIDENCE_CREATED',targetType:'SCIENTIFIC_VALIDATION_EVIDENCE',targetId:row.id,metadata:{instrument:row.instrument,evidenceType:row.evidenceType,status:row.status,sampleSize:row.sampleSize}}});
+ res.status(201).json({evidence:row});
+}));
+app.patch('/api/science/validation-evidence/:id/status',authenticate,allow(UserRole.ADMIN),asyncRoute(async(req,res)=>{
+ const parsed=z.object({status:z.enum(['PLANNED','IN_PROGRESS','COMPLETED','UNDER_REVIEW','ACCEPTED','INCONCLUSIVE','REJECTED']),reviewer:z.string().trim().min(2).max(120).optional()}).strict().safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:'Situação de revisão inválida.'});
+ const current=await prisma.scientificValidationEvidence.findUnique({where:{id:String(req.params.id)}});
+ if(!current)return res.status(404).json({error:'Evidência científica não encontrada.'});
+ const reviewed=['ACCEPTED','INCONCLUSIVE','REJECTED'].includes(parsed.data.status);
+ const evidence=await prisma.scientificValidationEvidence.update({where:{id:current.id},data:{status:parsed.data.status,...(reviewed?{reviewer:parsed.data.reviewer||req.authUser!.id,reviewedAt:new Date()}:{})}});
+ await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'SCIENTIFIC_VALIDATION_EVIDENCE_REVIEWED',targetType:'SCIENTIFIC_VALIDATION_EVIDENCE',targetId:evidence.id,metadata:{from:current.status,to:evidence.status,reviewer:evidence.reviewer}}});
+ res.json({evidence});
+}));
+
 /* LGPD governance: data subject requests, privacy controls and auditable access. */
 const privacyRequestSchema=z.object({
  requestType:z.enum(['ACCESS','CORRECTION','ANONYMIZATION','BLOCKING','DELETION','PORTABILITY','CONSENT_WITHDRAWAL','INFORMATION']),
