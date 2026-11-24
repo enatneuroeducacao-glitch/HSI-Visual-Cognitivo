@@ -1027,6 +1027,10 @@ app.get('/api/science/studies/compare',authenticate,allow(UserRole.ADMIN,UserRol
  res.json({minimumParticipants:5,methodology:'Comparação descritiva por estudo. Instrumentos e escalas permanecem separados. Grupos com menos de cinco participantes distintos são suprimidos. Aplicações legadas não verificadas são identificadas e não se presume equivalência entre versões.',studies:results});
 }));
 
+app.get('/api/science/audit',authenticate,allow(UserRole.ADMIN,UserRole.ANALYST),asyncRoute(async(_req,res)=>{
+ const rows=await prisma.auditLog.findMany({where:{targetType:{in:['INSTRUMENT_VERSION','STUDY_PROTOCOL','SCIENTIFIC_STUDY','STUDY_GROUP']}},orderBy:{createdAt:'desc'},take:150,select:{id:true,action:true,targetType:true,targetId:true,metadata:true,createdAt:true}});
+ res.json({events:rows});
+}));
 app.use((err: unknown,_req:Request,res:Response,_next:NextFunction) => {
   if (err && typeof err === 'object' && 'status' in err && typeof err.status === 'number') return res.status(err.status).json({error:err instanceof Error?err.message:'Solicitação inválida.'});
   if (err instanceof Error && err.message === 'INVALID_ANSWER') return res.status(400).json({error:'Resposta inválida ou questão não reconhecida.'});
