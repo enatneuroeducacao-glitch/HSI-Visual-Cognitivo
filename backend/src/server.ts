@@ -985,7 +985,7 @@ app.post('/api/science/versions',authenticate,allow(UserRole.ADMIN),asyncRoute(a
 app.patch('/api/science/versions/:id',authenticate,allow(UserRole.ADMIN),asyncRoute(async(req,res)=>{
   const parsed=versionInputSchema.partial().omit({instrument:true,version:true}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({error:'Alterações inválidas.',details:parsed.error.flatten()});
-  const current=await prisma.instrumentVersion.findUnique({where:{id:req.params.id}});
+  const current=await prisma.instrumentVersion.findUnique({where:{id:String(req.params.id)}});
   if(!current)return res.status(404).json({error:'Versão não encontrada.'});
   if(current.status!=='DRAFT'||current.publishedAt)return res.status(409).json({error:'Versões publicadas são imutáveis. Crie uma nova versão para alterar questões ou pontuação.'});
   const definitionError=validateVersionDefinition(current.instrument,parsed.data.questions??current.questions,parsed.data.scoringCriteria??current.scoringCriteria);
