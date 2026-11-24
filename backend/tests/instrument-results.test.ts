@@ -36,7 +36,7 @@ test('salva respostas completas do HSI-DOTH-P e calcula dimensões no servidor',
   const answers = Array.from({ length: 25 }, (_, i) => i === 3 || i === 8 || i === 13 || i === 18 || i === 23 ? 1 : 5);
   const response = await request(app).post('/api/instrument-results')
     .set('Authorization', 'Bearer ' + token())
-    .send({ id: suffix + '-result', instrument: 'HSI-DOTH-P', context: 'cotidiano', answers });
+    .send({ id: suffix + '-result', instrument: 'HSI-DOTH-P', context: 'cotidiano', researchConsent: false, answers });
   assert.equal(response.status, 201);
   assert.equal(response.body.result.instrument, 'HSI-DOTH-P');
   assert.equal(response.body.result.answers.length, 25);
@@ -54,7 +54,7 @@ test('histórico comportamental retorna apenas avaliações da própria conta', 
 
 test('recusa questionário incompleto, contexto inválido e acesso sem autenticação', async () => {
   const auth = 'Bearer ' + token();
-  assert.equal((await request(app).post('/api/instrument-results').set('Authorization', auth).send({ id: suffix + '-short', instrument: 'HSI-DOTH-P', context: 'cotidiano', answers: [1,2] })).status, 400);
+  assert.equal((await request(app).post('/api/instrument-results').set('Authorization', auth).send({ id: suffix + '-short', instrument: 'HSI-DOTH-P', context: 'cotidiano', researchConsent: false, answers: [1,2] })).status, 400);
   assert.equal((await request(app).post('/api/instrument-results').set('Authorization', auth).send({ id: suffix + '-context', instrument: 'HSI-DOTH-P', context: 'unknown', answers: Array(25).fill(3) })).status, 400);
   assert.equal((await request(app).get('/api/instrument-results')).status, 401);
 });
@@ -62,7 +62,7 @@ test('recusa questionário incompleto, contexto inválido e acesso sem autentica
 test('não permite reutilizar o identificador de uma avaliação', async () => {
   const response = await request(app).post('/api/instrument-results')
     .set('Authorization', 'Bearer ' + token())
-    .send({ id: suffix + '-result', instrument: 'HSI-DOTH-P', context: 'cotidiano', answers: Array(25).fill(3) });
+    .send({ id: suffix + '-result', instrument: 'HSI-DOTH-P', context: 'cotidiano', researchConsent: false, answers: Array(25).fill(3) });
   assert.equal(response.status, 409);
 });
 
@@ -71,7 +71,7 @@ test('série longitudinal compara contextos e mantém instrumento cognitivo sepa
   const auth = 'Bearer ' + token();
   const submitted = await request(app).post('/api/instrument-results')
     .set('Authorization', auth)
-    .send({ id: suffix + '-work', instrument: 'HSI-DOTH-P', context: 'trabalho', answers: Array(25).fill(4) });
+    .send({ id: suffix + '-work', instrument: 'HSI-DOTH-P', context: 'trabalho', researchConsent: false, answers: Array(25).fill(4) });
   assert.equal(submitted.status, 201);
   assert.equal(submitted.body.result.applicationNumber, 2);
   assert.equal(submitted.body.result.applicationType, 'REEVALUATION');
@@ -98,7 +98,7 @@ test('registra dados sociodemográficos e vínculo institucional declarado sem e
   const participantData = { birthDate:'1990-04-12', sex:'F', licenseCategory:'B', city:'Joinville', state:'SC', country:'BR', institutionType:'SCHOOL', institutionName:'Escola de Pesquisa ENAT', groupSector:'Ensino médio' };
   const response = await request(app).post('/api/instrument-results')
     .set('Authorization', 'Bearer ' + token())
-    .send({ id:suffix+'-profile', instrument:'HSI-DOTH-P', context:'educacao', answers:Array(25).fill(3), studyCode, studyGroupCode:'COORTE-A', instrumentVersion:'1.2', participantData });
+    .send({ id:suffix+'-profile', instrument:'HSI-DOTH-P', context:'educacao', researchConsent: false, answers:Array(25).fill(3), studyCode, studyGroupCode:'COORTE-A', instrumentVersion:'1.2', participantData });
   assert.equal(response.status, 201);
   assert.equal(response.body.result.city, 'Joinville');
   assert.equal(response.body.result.state, 'SC');
@@ -120,9 +120,9 @@ test('rejeita sexo fora de M/F e UF inválida nos dados do respondente', async (
   const auth = 'Bearer ' + token();
   const base = { birthDate:'1990-04-12', sex:'X', city:'Joinville', state:'SC', institutionType:'INDEPENDENT' };
   const badSex = await request(app).post('/api/instrument-results').set('Authorization',auth)
-    .send({id:suffix+'-bad-sex',instrument:'HSI-DOTH-P',context:'cotidiano',answers:Array(25).fill(3),participantData:base});
+    .send({id:suffix+'-bad-sex',instrument:'HSI-DOTH-P',context:'cotidiano',researchConsent:false,answers:Array(25).fill(3),participantData:base});
   assert.equal(badSex.status,400);
   const badState = await request(app).post('/api/instrument-results').set('Authorization',auth)
-    .send({id:suffix+'-bad-state',instrument:'HSI-DOTH-P',context:'cotidiano',answers:Array(25).fill(3),participantData:{...base,sex:'M',state:'Santa Catarina'}});
+    .send({id:suffix+'-bad-state',instrument:'HSI-DOTH-P',context:'cotidiano',researchConsent:false,answers:Array(25).fill(3),participantData:{...base,sex:'M',state:'Santa Catarina'}});
   assert.equal(badState.status,400);
 });
