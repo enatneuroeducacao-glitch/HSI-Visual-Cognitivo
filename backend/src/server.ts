@@ -55,6 +55,7 @@ app.use(cors({ origin(origin, cb) { if (!origin || allowedOrigins.includes(origi
 app.use(express.json({ limit: '1mb' }));
 app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false }));
 app.use('/api/public', rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: 'draft-7', legacyHeaders: false }));
+app.use('/api/privacy', rateLimit({ windowMs: 60 * 60 * 1000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false }));
 
 type AuthUser = {
   id: string; name: string; email: string; role: UserRole; status: UserStatus;
@@ -890,6 +891,7 @@ app.get('/api/research/aggregate', authenticate, allow(UserRole.ADMIN,UserRole.A
 app.get('/api/research/export.csv', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res)=>{
   const aggregate=await getResearchAggregate(req.query as Record<string,unknown>);
   if(aggregate.privacy.suppressed)return res.status(403).json({error:'Exportação suprimida: são necessários pelo menos cinco participantes distintos.',privacy:aggregate.privacy});
+  await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'AGGREGATE_RESEARCH_EXPORT',targetType:'RESEARCH_EXPORT',metadata:{participants:aggregate.totals.participants,applications:aggregate.totals.assessments,format:'CSV'}}});
   const rows:string[][]=[['tipo','codigo','dimensao','pontuacao_media','aplicacoes','participantes']];
   for(const d of aggregate.dimensions)rows.push(['geral','TODOS',d.name,String(d.score),String(d.applications),String(aggregate.totals.participants)]);
   for(const g of aggregate.geography)for(const d of g.dimensions)rows.push(['municipio',g.state+'-'+g.city,d.dimensionId,String(d.score),String(g.count),String(g.participants)]);
