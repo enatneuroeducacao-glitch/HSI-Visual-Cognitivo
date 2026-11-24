@@ -75,6 +75,11 @@ async function withSerializableRetry<T>(work: () => Promise<T>): Promise<T> {
   }
   throw new Error('Não foi possível reservar a sequência da avaliação.');
 }
+const PRIVACY_NOTICE_VERSION='ENAT-PRIVACY-1.1';
+const RESEARCH_CONSENT_VERSION='ENAT-RESEARCH-1.1';
+async function recordConsent(userId:string,granted:boolean,source:string,extra:{instrument?:string;assessmentId?:string;privacyNoticeVersion?:string}={}) {
+ await prisma.consentEvent.create({data:{userId,purpose:'RESEARCH_USE',granted,consentVersion:RESEARCH_CONSENT_VERSION,privacyNoticeVersion:extra.privacyNoticeVersion||PRIVACY_NOTICE_VERSION,instrument:extra.instrument||null,assessmentId:extra.assessmentId||null,source}});
+}
 const publicUser = (u: AuthUser) => ({
   id: u.id, name: u.publicAccess ? 'Participante público' : u.name,
   email: u.publicAccess ? null : u.email, role: u.role, status: u.status,
@@ -83,7 +88,7 @@ const publicUser = (u: AuthUser) => ({
     birthDate: u.birthDate ? u.birthDate.toISOString().slice(0, 10) : null,
     sex: u.sex, licenseCategory: u.licenseCategory, city: u.city, state: u.state,
     institutionType: u.institutionType, institutionName: u.institutionName, groupSector: u.groupSector,
-    researchConsent: Boolean(u.researchConsentedAt), researchConsentVersion: u.researchConsentVersion
+    researchConsent: Boolean((u as any).researchConsentGranted), researchConsentVersion: u.researchConsentVersion
   } : null
 });
 
@@ -160,8 +165,8 @@ const publicParticipantSchema = z.object({
   institutionType: z.enum(['INDEPENDENT','SCHOOL','COMPANY','PUBLIC_AGENCY','UNIVERSITY','RESEARCH_CENTER','COMMUNITY','OTHER']),
   institutionName: z.string().trim().max(180).nullable().optional(),
   groupSector: z.string().trim().max(120).nullable().optional(),
-  privacyNoticeVersion: z.literal('ENAT-PRIVACY-1.0'),
-  researchConsent: z.boolean().default(false)
+  privacyNoticeVersion: z.literal(PRIVACY_NOTICE_VERSION),
+  researchConsent: z.boolean()
 }).strict();
 
 function publicSessionToken(userId: string) {
@@ -188,9 +193,11 @@ app.post('/api/public/participants', asyncRoute(async (req, res) => {
     licenseCategory: data.licenseCategory || null, institutionType: data.institutionType,
     institutionName: data.institutionName?.trim() || null, groupSector: data.groupSector?.trim() || null,
     privacyNoticeVersion: data.privacyNoticeVersion, privacyAcknowledgedAt: new Date(),
-    researchConsentVersion: data.researchConsent ? 'ENAT-RESEARCH-1.0' : null,
-    researchConsentedAt: data.researchConsent ? new Date() : null
+    researchConsentVersion: RESEARCH_CONSENT_VERSION,
+    researchConsentedAt: data.researchConsent ? new Date() : null,
+    researchConsentGranted: data.researchConsent
   }});
+  await recordConsent(user.id,data.researchConsent,'PUBLIC_REGISTRATION',{privacyNoticeVersion:data.privacyNoticeVersion});
   await prisma.auditLog.create({ data: {
     actorId: user.id, action: 'PUBLIC_PARTICIPANT_CREATE', targetType: 'USER', targetId: user.id,
     metadata: { publicAccess: true, researchConsent: data.researchConsent, privacyNoticeVersion: data.privacyNoticeVersion }
@@ -210,16 +217,18 @@ app.post('/api/public/session', asyncRoute(async (req, res) => {
 
 app.patch('/api/public/research-consent', authenticate, asyncRoute(async (req, res) => {
   if (!req.authUser!.publicAccess) return res.status(403).json({ error: 'Esta operação está disponível somente para participantes públicos.' });
-  const parsed = z.object({ researchConsent: z.boolean() }).safeParse(req.body);
+  const parsed = z.object({ researchConsent: z.boolean() }).strict().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Informe uma opção válida de consentimento.' });
   const enabled = parsed.data.researchConsent;
   const user = await prisma.user.update({
     where: { id: req.authUser!.id },
     data: {
-      researchConsentVersion: enabled ? 'ENAT-RESEARCH-1.0' : null,
-      researchConsentedAt: enabled ? new Date() : null
+      researchConsentVersion: RESEARCH_CONSENT_VERSION,
+      researchConsentedAt: enabled ? new Date() : null,
+      researchConsentGranted: enabled
     }
   });
+  await recordConsent(user.id,enabled,'PARTICIPANT_PREFERENCE');
   await prisma.auditLog.create({ data: {
     actorId: user.id, action: enabled ? 'PUBLIC_RESEARCH_CONSENT_GRANTED' : 'PUBLIC_RESEARCH_CONSENT_WITHDRAWN',
     targetType: 'USER', targetId: user.id, metadata: { researchConsent: enabled }
@@ -236,8 +245,8 @@ const researchProfileSchema = z.object({
   institutionType: z.enum(['INDEPENDENT','SCHOOL','COMPANY','PUBLIC_AGENCY','UNIVERSITY','RESEARCH_CENTER','COMMUNITY','OTHER']),
   institutionName: z.string().trim().max(180).nullable().optional(),
   groupSector: z.string().trim().max(120).nullable().optional(),
-  privacyNoticeVersion: z.literal('ENAT-PRIVACY-1.0'),
-  researchConsent: z.boolean().default(false)
+  privacyNoticeVersion: z.literal(PRIVACY_NOTICE_VERSION),
+  researchConsent: z.boolean()
 }).strict();
 
 app.patch('/api/auth/research-profile', authenticate, asyncRoute(async (req, res) => {
@@ -258,10 +267,12 @@ app.patch('/api/auth/research-profile', authenticate, asyncRoute(async (req, res
       licenseCategory: data.licenseCategory || null, institutionType: data.institutionType,
       institutionName: data.institutionName?.trim() || null, groupSector: data.groupSector?.trim() || null,
       privacyNoticeVersion: data.privacyNoticeVersion, privacyAcknowledgedAt: new Date(),
-      researchConsentVersion: data.researchConsent ? 'ENAT-RESEARCH-1.0' : null,
-      researchConsentedAt: data.researchConsent ? new Date() : null
+      researchConsentVersion: RESEARCH_CONSENT_VERSION,
+      researchConsentedAt: data.researchConsent ? new Date() : null,
+      researchConsentGranted: data.researchConsent
     }
   });
+  await recordConsent(user.id,data.researchConsent,'RESEARCH_PROFILE_UPDATE',{privacyNoticeVersion:data.privacyNoticeVersion});
   await prisma.auditLog.create({ data: {
     actorId: user.id, action: 'RESEARCH_PROFILE_UPDATED', targetType: 'USER', targetId: user.id,
     metadata: { researchConsent: data.researchConsent, privacyNoticeVersion: data.privacyNoticeVersion }
@@ -409,6 +420,7 @@ const resultSchema = z.object({
   id:z.string().min(8).max(100), mode:z.enum(['Avaliação completa','Eixo individual']),
   completedAt:z.string().datetime(), totalQuestions:z.number().int().min(1).max(30),
   durationSeconds:z.number().int().min(1).max(86400),
+  researchConsent:z.boolean(),
   studyCode:z.string().trim().min(2).max(80).optional(),
   studyGroupCode:z.string().trim().min(1).max(40).optional(),
   instrumentVersion:z.string().trim().min(1).max(20).default('1.0'),
@@ -483,7 +495,7 @@ const instrumentResultSchema = z.object({
   instrumentVersion: z.string().trim().min(1).max(20).default('1.0'),
   studyCode: z.string().trim().min(2).max(80).optional(),
   studyGroupCode: z.string().trim().min(1).max(40).optional(),
-  consentVersion: z.string().max(40).optional(),
+  researchConsent: z.boolean(),
   participantData: z.object({
     birthDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     sex:z.enum(['M','F']),
@@ -643,7 +655,7 @@ app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN,UserRole.ANALY
   const where={completedAt:{gte:from,lte:to},user:userFilter};
   const [cognitive,instruments]=await Promise.all([
     prisma.assessmentResult.findMany({where,select:{userId:true,totalQuestions:true,correct:true,axes:true,answerDetails:true,completedAt:true}}),
-    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:userFilter},select:{userId:true,context:true,dimensions:true,answers:true,completedAt:true}})
+    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},researchConsentGranted:true,user:userFilter},select:{userId:true,context:true,dimensions:true,answers:true,completedAt:true}})
   ]);
   const minimumGroupSize=5;
   const cognitiveParticipants=new Set(cognitive.map(row=>row.userId)).size;
@@ -686,8 +698,8 @@ app.get('/api/admin/national-analytics', authenticate, allow(UserRole.ADMIN,User
   const minimumGroupSize = 5;
   const userFilter = {OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]};
   const [cognitiveRows,behavioralRows] = await Promise.all([
-    prisma.assessmentResult.findMany({where:{completedAt:{gte:from,lte:to},user:userFilter},select:{userId:true,completedAt:true,totalQuestions:true,correct:true,axes:true,answerDetails:true,user:{select:{city:true,state:true,institutionName:true,institutionType:true}}}}),
-    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:userFilter},select:{userId:true,completedAt:true,context:true,dimensions:true,answers:true,city:true,state:true,institutionName:true,institutionType:true,institution:{select:{name:true,type:true,city:true,state:true}}}})
+    prisma.assessmentResult.findMany({where:{completedAt:{gte:from,lte:to},researchConsentGranted:true,user:userFilter},select:{userId:true,completedAt:true,totalQuestions:true,correct:true,axes:true,answerDetails:true,user:{select:{city:true,state:true,institutionName:true,institutionType:true}}}}),
+    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},researchConsentGranted:true,user:userFilter},select:{userId:true,completedAt:true,context:true,dimensions:true,answers:true,city:true,state:true,institutionName:true,institutionType:true,institution:{select:{name:true,type:true,city:true,state:true}}}})
   ]);
   const build = (rows:any[], kind:'cognitive'|'behavioral') => {
     const users = new Set(rows.map(row=>row.userId));
@@ -800,7 +812,7 @@ async function getResearchAggregate(query:Record<string,unknown>){
   const to=parsed.data.to?new Date(parsed.data.to):new Date();
   if(from>to)throw Object.assign(new Error('Período inválido.'),{status:400});
   const rows=await prisma.instrumentAssessment.findMany({
-    where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:{OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]},...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
+    where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},researchConsentGranted:true,...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
     select:{userId:true,institutionId:true,city:true,state:true,context:true,dimensions:true,institutionType:true,institutionName:true,groupSector:true,institution:{select:{name:true,type:true,city:true,state:true}},completedAt:true}
   });
   const participants=new Set(rows.map(x=>x.userId)).size;
@@ -901,7 +913,7 @@ app.get('/api/admin/data-quality', authenticate, allow(UserRole.ADMIN,UserRole.A
   const from=typeof req.query.from==='string'?new Date(req.query.from):new Date(Date.now()-365*86400000);
   const to=typeof req.query.to==='string'?new Date(req.query.to):new Date();
   if(!Number.isFinite(from.getTime())||!Number.isFinite(to.getTime())||from>to)return res.status(400).json({error:'Período inválido.'});
-  const userFilter={OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]};
+  const userFilter={researchConsentGranted:true};
   const [cognitive,behavioral]=await Promise.all([
     prisma.assessmentResult.findMany({where:{completedAt:{gte:from,lte:to},user:userFilter},select:{userId:true,durationSeconds:true,totalQuestions:true,answerDetails:true,completedAt:true,instrumentVersion:true,mode:true,accuracy:true}}),
     prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:userFilter},select:{userId:true,answers:true,dimensions:true,completedAt:true,context:true,contextVersion:true,instrumentVersion:true,state:true,city:true,institutionType:true}})
