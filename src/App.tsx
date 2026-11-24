@@ -534,7 +534,7 @@ function App() {
           </div>
         </header>
 
-        {view === 'privacy' && <main className="main-content"><PrivacyCenter /></main>}
+        {view === 'privacy' && <main className="main-content"><PrivacyCenter user={user} onUserChange={setUser} /></main>}
         {view === 'admin' && (user.role === 'ADMIN' || user.role === 'ANALYST') && <AdminPanel role={user.role} />}
         {view === 'dothp' && <DothpAssessment participantData={user.researchProfile} />}
 
