@@ -36,8 +36,6 @@ export const dothpItems = [
   ['psychocomportamental','Depois de uma situação difícil, costumo refletir sobre o que senti e como agi.'],
 ] as const;
 
-const reverseItems = new Set([3, 8, 13, 18, 23]);
-
 export function scoreDothp(answers: number[], context = 'cotidiano', questionSet: Array<Record<string, any>> = dothpItems.map(([dimension,prompt],index)=>({dimension,prompt,reverseScored:[3,8,13,18,23].includes(index)})), criteria: Record<string, any> = {}) {
   const dimensionPositions = new Map<string,number>();
   const reverseItems = new Set<number>((Array.isArray(criteria.reverseItems)?criteria.reverseItems:[4,9,14,19,24]).map((x:any)=>Number(x)-1));
