@@ -5,6 +5,7 @@ import DothpAssessment from './DothpAssessment';
 import InstrumentHistory from './InstrumentHistory';
 import PublicAccess from './PublicAccess';
 import ResearchProfile from './ResearchProfile';
+import { exportReportCsv, exportReportExcel } from './report-export';
 
 const logoUrl = new URL('../assets/hsi-visual-cognitivo.webp', import.meta.url).href;
 
@@ -796,7 +797,7 @@ function App() {
           <section className="content report-page">
             <div className="report-toolbar no-print">
               <button className="back-link" onClick={() => setView('history')}>← Voltar ao histórico</button>
-              <button className="primary" onClick={printReport}>Baixar / imprimir PDF</button>
+              <button className="secondary" onClick={()=>{const metadata={Instrumento:"HSI Visual Cognitivo",Código: selectedReport.participantCode,Data:new Date(selectedReport.completedAt).toLocaleString("pt-BR"),Sessão:selectedReport.mode,Amostra:"1 participante — relatório pessoal",Metodologia:"Desempenho descritivo em tarefas estruturadas; percentuais calculados a partir de acertos e questões respondidas.",Inclusão:"Somente o resultado autenticado do próprio participante.",Limitações:"Instrumento experimental; não constitui diagnóstico, norma populacional, laudo ou avaliação de aptidão para dirigir."};const rows=[...selectedReport.axes.map(a=>({Tipo:"Eixo",Indicador:a.title,Acertos:a.correct,Questões:a.total,Precisão:a.accuracy,Tempo_médio_segundos:a.averageSeconds})),...(selectedReport.answerDetails||[]).map(a=>({Tipo:"Resposta",Questão:a.prompt,Eixo:a.axisId,Alternativa:a.selectedOption,Alternativa_referência:a.correctOption,Acerto:a.correct?"Sim":"Não",Tempo_segundos:a.seconds}))];exportReportCsv("HSI-Visual-Cognitivo-individual-"+selectedReport.completedAt.slice(0,10)+".csv",metadata,rows);}}>CSV</button><button className="secondary" onClick={()=>{const metadata={Instrumento:"HSI Visual Cognitivo",Código:selectedReport.participantCode,Data:new Date(selectedReport.completedAt).toLocaleString("pt-BR"),Sessão:selectedReport.mode,Amostra:"1 participante — relatório pessoal",Metodologia:"Desempenho descritivo em tarefas estruturadas; percentuais calculados a partir de acertos e questões respondidas.",Inclusão:"Somente o resultado autenticado do próprio participante.",Limitações:"Instrumento experimental; não constitui diagnóstico, norma populacional, laudo ou avaliação de aptidão para dirigir."};exportReportExcel("HSI-Visual-Cognitivo-individual-"+selectedReport.completedAt.slice(0,10)+".xls",metadata,[{name:"Eixos",rows:selectedReport.axes.map(a=>({Eixo:a.title,Acertos:a.correct,Questões:a.total,Precisão:a.accuracy,Tempo_médio_segundos:a.averageSeconds}))},{name:"Respostas",rows:(selectedReport.answerDetails||[]).map(a=>({Questão:a.prompt,Eixo:a.axisId,Alternativa:a.selectedOption,Alternativa_referência:a.correctOption,Acerto:a.correct?"Sim":"Não",Tempo_segundos:a.seconds}))}]);}}>Excel</button><button className="primary" onClick={printReport}>PDF / Imprimir</button>
             </div>
             <article className="pdf-report">
               <header className="pdf-header institutional-header">
