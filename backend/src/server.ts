@@ -1117,7 +1117,7 @@ app.get('/api/admin/privacy/requests',authenticate,allow(UserRole.ADMIN),asyncRo
  res.json({requests:requests.map(r=>({...r,user:{...r.user,name:r.user.publicAccess?'Participante público':r.user.name,email:r.user.publicAccess?null:r.user.email}}))});
 }));
 app.patch('/api/admin/privacy/requests/:id',authenticate,allow(UserRole.ADMIN),asyncRoute(async(req,res)=>{
- const parsed=z.object({status:z.enum(['IN_REVIEW','WAITING_FOR_USER','COMPLETED','REJECTED'),resolutionNote:z.string().trim().max(2000).optional()}).strict().safeParse(req.body);
+ const parsed=z.object({status:z.enum(['IN_REVIEW','WAITING_FOR_USER','COMPLETED','REJECTED']),resolutionNote:z.string().trim().max(2000).optional()}).strict().safeParse(req.body);
  if(!parsed.success)return res.status(400).json({error:'Atualização inválida.'});
  const request=await prisma.privacyRequest.update({where:{id:String(req.params.id)},data:parsed.data});
  await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'DATA_SUBJECT_REQUEST_UPDATED',targetType:'PRIVACY_REQUEST',targetId:request.id,metadata:{status:request.status,requestType:request.requestType}}});
