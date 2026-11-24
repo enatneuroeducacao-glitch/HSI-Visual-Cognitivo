@@ -38,9 +38,12 @@ export const dothpItems = [
 
 const reverseItems = new Set([3, 8, 13, 18, 23]);
 
-export function scoreDothp(answers: number[], context = 'cotidiano') {
+export function scoreDothp(answers: number[], context = 'cotidiano', questionSet: Array<Record<string, any>> = dothpItems.map(([dimension,prompt],index)=>({dimension,prompt,reverseScored:[3,8,13,18,23].includes(index)})), criteria: Record<string, any> = {}) {
   const dimensionPositions = new Map<string,number>();
-  const normalized = dothpItems.map(([dimensionId, baseStatement], index) => {
+  const reverseItems = new Set<number>((Array.isArray(criteria.reverseItems)?criteria.reverseItems:[4,9,14,19,24]).map((x:any)=>Number(x)-1));
+  const normalized = questionSet.map((question, index) => {
+    const dimensionId=String(question.dimension||question.dimensionId||'unknown');
+    const baseStatement=String(question.prompt||question.statement||'');
     const dimensionItemIndex=dimensionPositions.get(dimensionId)||0;
     dimensionPositions.set(dimensionId,dimensionItemIndex+1);
     return {
@@ -53,13 +56,17 @@ export function scoreDothp(answers: number[], context = 'cotidiano') {
       contextHint:getDothpContextHint(context,dimensionId),
     };
   });
-  const dimensions = dothpDimensions.map(dimension => {
+  const dimensionDefinitions=Array.isArray(criteria.dimensions)&&criteria.dimensions.length?criteria.dimensions:dothpDimensions;
+  const dimensions = dimensionDefinitions.map((dimension:any) => {
     const rows = normalized.filter(item => item.dimensionId === dimension.id);
-    const mean = rows.reduce((sum, item) => sum + item.scoredResponse, 0) / rows.length;
-    const score = Math.round((mean - 1) * 25);
-    const interpretation = score < 34
+    const mean = rows.length ? rows.reduce((sum, item) => sum + item.scoredResponse, 0) / rows.length : 0;
+    const scaleMin=Number(criteria.scale?.min??1),scaleMax=Number(criteria.scale?.max??5);
+    const scoreMin=Number(criteria.scoreRange?.min??0),scoreMax=Number(criteria.scoreRange?.max??100);
+    const score = rows.length ? Math.round(scoreMin+((mean-scaleMin)/(scaleMax-scaleMin))*(scoreMax-scoreMin)) : 0;
+    const low=Number(criteria.bands?.low?.maxExclusive??34),high=Number(criteria.bands?.high?.min??67);
+    const interpretation = score < low
       ? 'Nesta aplicação, as respostas indicam menor frequência autorreferida de comportamentos associados a esta dimensão. Pode ser útil refletir sobre situações concretas em que esses comportamentos poderiam ser praticados.'
-      : score < 67
+      : score < high
         ? 'Nesta aplicação, as respostas sugerem presença variável dos comportamentos associados a esta dimensão. Vale observar em quais contextos aparecem com maior ou menor frequência.'
         : 'Nesta aplicação, as respostas indicam maior frequência autorreferida de comportamentos associados a esta dimensão. A reflexão pode explorar como manter essa consistência em diferentes contextos.';
     return { id: dimension.id, name: dimension.name, subtitle: dimension.subtitle, mean: Number(mean.toFixed(2)), score, answered: rows.length, interpretation };
