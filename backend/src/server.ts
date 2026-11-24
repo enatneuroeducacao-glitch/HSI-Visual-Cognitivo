@@ -487,8 +487,10 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
       applicationNumber,applicationType:studyCode?'EXPERIMENTAL':applicationNumber===1?'BASELINE':'REEVALUATION',
       studyCode,instrumentVersion:activeVersion.version,instrumentVersionId:activeVersion.id,
       scoringSnapshot:activeVersion.scoringCriteria as Prisma.InputJsonValue,versionVerification:'VERIFIED',
+      researchConsentGranted:d.researchConsent,researchConsentVersion:RESEARCH_CONSENT_VERSION,researchConsentedAt:d.researchConsent?new Date():null,
       studyId:study?.id||null,studyGroupId:studyGroup?.id||null
     }});
+    await tx.consentEvent.create({data:{userId:req.authUser!.id,purpose:'RESEARCH_USE',granted:d.researchConsent,consentVersion:RESEARCH_CONSENT_VERSION,instrument:'HSI Visual Cognitivo',assessmentId:created.id,source:'ASSESSMENT_SUBMISSION'}});
     await tx.auditLog.create({data:{actorId:req.authUser!.id,action:'ASSESSMENT_SUBMIT',targetType:'RESULT',targetId:created.id,metadata:{applicationNumber,applicationType:created.applicationType,studyCode}}});
     return created;
   }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable}));
@@ -604,6 +606,7 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
       groupSector: profile?.groupSector || null,
       consentVersion: RESEARCH_CONSENT_VERSION,
       consentedAt: data.researchConsent ? new Date() : null,
+      researchConsentGranted: data.researchConsent,
       completedAt: new Date(),
       answers: scored.answers as Prisma.InputJsonValue,
       dimensions: scored.dimensions as Prisma.InputJsonValue,
