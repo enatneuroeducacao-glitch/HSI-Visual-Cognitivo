@@ -129,6 +129,7 @@ function App() {
   const [results, setResults] = useState<SavedResult[]>([]);
   const [behavioralResults, setBehavioralResults] = useState<any[]>([]);
   const [participantDrafts, setParticipantDrafts] = useState<Record<string, any>>({});
+  const [resumeBehavioralSession, setResumeBehavioralSession] = useState(false);
   const [finishConfirmation, setFinishConfirmation] = useState(false);
   const [pendingFinalAnswers, setPendingFinalAnswers] = useState<typeof answers>([]);
   const [view, setView] = useState('home');
@@ -579,7 +580,7 @@ function App() {
 
         {view === 'privacy' && <main className="main-content"><PrivacyCenter user={user} onUserChange={(next)=>{setUser(next);setResearchConsent(Boolean(next?.researchProfile?.researchConsent));}} /></main>}
         {view === 'admin' && (user.role === 'ADMIN' || user.role === 'ANALYST') && <AdminPanel role={user.role} />}
-        {view === 'dothp' && <DothpAssessment participantData={user.researchProfile} />}
+        {view === 'dothp' && <DothpAssessment participantData={user.researchProfile} resumeDraft={resumeBehavioralSession} />}
 
         {view === 'home' && (
           <ParticipantExperience
@@ -591,9 +592,9 @@ function App() {
             cognitiveDraftAvailable={Boolean(participantDrafts['HSI Visual Cognitivo'])}
             behavioralDraftAvailable={Boolean(participantDrafts['HSI-DOTH-P'])}
             onResumeCognitive={resumeCognitiveDraft}
-            onResumeBehavioral={() => setView('dothp')}
+            onResumeBehavioral={() => { setResumeBehavioralSession(true); setView('dothp'); }}
             onStartCognitive={() => setView('cognitive-intro')}
-            onStartBehavioral={() => setView('dothp-intro')}
+            onStartBehavioral={() => { setResumeBehavioralSession(false); setView('dothp-intro'); }}
             onHistory={() => { setView('history'); loadResults(); }}
             onPrivacy={() => setView('privacy')}
           />
