@@ -341,3 +341,31 @@ model ParticipantDraft {
   @@unique([userId, instrument])
   @@index([expiresAt])
 }
+
+model ScientificValidationEvidence {
+  id                 String   @id @default(cuid())
+  instrument         String
+  evidenceType       String
+  title              String
+  versionScope       String
+  studyCode          String?
+  protocolReference  String?
+  methodDescription  String
+  population         String
+  sampleSize         Int       @default(0)
+  sampleDescription  String
+  findings           String
+  interpretation     String
+  limitations        String
+  ethicalStatus      String   @default("NOT_ASSESSED")
+  ethicsReference    String?
+  status             String   @default("PLANNED")
+  reviewer           String?
+  reviewedAt         DateTime?
+  createdBy          String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  @@index([instrument, evidenceType, status])
+  @@index([studyCode])
+  @@index([createdAt])
+}
