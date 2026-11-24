@@ -102,6 +102,11 @@ export default function PublicAccess({ onAuthenticated }: Props) {
         <p className="eyebrow">ENAT · PESQUISA E DESENVOLVIMENTO</p>
         <h1>HSI Visual Cognitivo</h1>
         <p className="muted">Plataforma de instrumentos complementares para exploração de habilidades cognitivas e padrões comportamentais.</p>
+        <section className="public-instrument-overview" aria-label="Conheça os instrumentos">
+          <div><span aria-hidden="true">◉</span><section><strong>HSI-DOTH-P</strong><p>Autoavaliação comportamental em cinco dimensões, com 25 afirmações.</p></section></div>
+          <div><span aria-hidden="true">▦</span><section><strong>HSI Visual Cognitivo</strong><p>Exercícios visuais e de raciocínio em seis eixos, com 30 questões.</p></section></div>
+          <small>São instrumentos complementares, com aplicações e resultados independentes. Você poderá escolher qual realizar após entrar.</small>
+        </section>
 
         {error && <div className="notice error" role="alert">{error}</div>}
         {message && <div className="notice success" role="status">{message}</div>}
