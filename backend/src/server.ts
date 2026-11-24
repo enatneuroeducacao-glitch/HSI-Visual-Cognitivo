@@ -1146,8 +1146,8 @@ const validationEvidenceSchema=z.object({
  limitations:z.string().trim().min(5).max(5000),
  ethicalStatus:z.enum(['NOT_ASSESSED','PENDING','APPROVED','WAIVED','NOT_APPLICABLE']).default('NOT_ASSESSED'),
  ethicsReference:z.string().trim().max(180).optional(),
- status:z.enum(['PLANNED','IN_PROGRESS','COMPLETED','UNDER_REVIEW','ACCEPTED','INCONCLUSIVE','REJECTED']).default('PLANNED')
-}).strict();
+ status:z.enum(['PLANNED','IN_PROGRESS','COMPLETED','UNDER_REVIEW']).default('PLANNED')
+}).strict().superRefine((value,ctx)=>{if(['WAIVED','NOT_APPLICABLE'].includes(value.ethicalStatus)&&!value.ethicsReference?.trim())ctx.addIssue({code:'custom',path:['ethicsReference'],message:'Informe a justificativa formal para dispensa ou não aplicabilidade da revisão ética.'});if(value.sampleSize>0&&!value.sampleDescription.trim())ctx.addIssue({code:'custom',path:['sampleDescription'],message:'Descreva a composição e o recrutamento da amostra.'});});
 app.get('/api/science/validation-evidence',authenticate,allow(UserRole.ADMIN,UserRole.ANALYST),asyncRoute(async(_req,res)=>{
  const evidence=await prisma.scientificValidationEvidence.findMany({orderBy:[{instrument:'asc'},{createdAt:'desc'}]});
  res.json({evidence,scientificStatus:{'HSI-DOTH-P':'EXPERIMENTAL_NOT_PSYCHOMETRICALLY_VALIDATED','HSI Visual Cognitivo':'EXPERIMENTAL_NOT_PSYCHOMETRICALLY_VALIDATED'},notice:'O registro de evidências não equivale à validação psicométrica. Não há autorização automática para diagnóstico, normas populacionais ou avaliação de aptidão.'});
