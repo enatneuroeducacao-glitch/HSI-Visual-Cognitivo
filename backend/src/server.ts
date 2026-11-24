@@ -439,7 +439,6 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
   const modeError = validateAssessmentMode(d.mode, verified.length, verified.map(a => a.axisId), questions.length);
   if (modeError) return res.status(400).json({error:modeError});
   const correct = verified.filter(a => a.correct).length;
-  const accuracy = Math.round(correct / verified.length * 100);
 
   const axes = [...new Set(verified.map(a => a.axisId))].map(axisId => {
     const rows = verified.filter(a => a.axisId === axisId);
@@ -447,6 +446,9 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
     const axisCorrect = rows.filter(a => a.correct).length;
     return { axisId, title: axisTitles[axisId] || axisId, correct: axisCorrect, total: rows.length, accuracy: Math.round(axisCorrect / rows.length * 100), averageSeconds: Math.round(rows.reduce((sum,a) => sum + a.seconds, 0) / rows.length) };
   });
+  const weights=(activeVersion.scoringCriteria as any).axisWeights||{logic:1,attention:1,patterns:1,anticipation:1,risk:1,decision:1};
+  const applicableWeight=axes.reduce((sum,axis)=>sum+Number(weights[axis.axisId]||0),0);
+  const accuracy=applicableWeight?Math.round(axes.reduce((sum,axis)=>sum+axis.accuracy*Number(weights[axis.axisId]||0),0)/applicableWeight):0;
   const studyCode=d.studyCode?.trim()||null;
   const study=studyCode?await prisma.scientificStudy.findUnique({where:{code:studyCode}}):null;
   if(studyCode&&(!study||study.status!=='ACTIVE'))return res.status(400).json({error:'Estudo não encontrado ou não está ativo para receber aplicações.'});
@@ -912,7 +914,7 @@ app.get('/api/admin/data-quality', authenticate, allow(UserRole.ADMIN,UserRole.A
 const instrumentNames = ['HSI-DOTH-P','HSI Visual Cognitivo'] as const;
 const scoringCriteriaFor = (instrument:string) => instrument==='HSI-DOTH-P'
   ? {scale:'Likert 1–5',reverseItems:[4,9,14,19,24],dimensions:dothpDimensions,formula:'score = round((mean(scored responses) - 1) × 25)',bands:{low:'<34',medium:'34–66',high:'>=67'},contextualized:true}
-  : {method:'structured visual/cognitive tasks',axes:['logic','attention','patterns','anticipation','risk','decision'],formula:'accuracy = round(correct / answered × 100)',timeMetric:'seconds per item',diagnosticUse:false};
+  : {method:'structured visual/cognitive tasks',axes:['logic','attention','patterns','anticipation','risk','decision'],axisWeights:{logic:1,attention:1,patterns:1,anticipation:1,risk:1,decision:1},formula:'weightedAccuracy = weighted mean of axis accuracies',timeMetric:'seconds per item',diagnosticUse:false};
 const questionsFor = (instrument:string) => instrument==='HSI-DOTH-P'
   ? dothpItems.map(([dimension,prompt],index)=>({id:'dothp-'+(index+1),dimension,prompt,reverseScored:[3,8,13,18,23].includes(index)}))
   : questions.map((q:any)=>({id:q.id,axis:q.axis,prompt:q.prompt,visual:q.visual,options:q.options,answer:q.answer}));
@@ -947,6 +949,8 @@ function validateVersionDefinition(instrument:string,questionsValue:any,criteria
    seen.add(q.id);counts.set(q.axis,(counts.get(q.axis)||0)+1);
   }
   if(axes.some(axis=>counts.get(axis)!==5))return 'Cada eixo cognitivo deve conter exatamente cinco questões.';
+  const weights=criteria?.axisWeights;
+  if(!weights||axes.some(axis=>!Number.isFinite(Number(weights[axis]))||Number(weights[axis])<0)||axes.every(axis=>Number(weights[axis])===0))return 'Defina pesos numéricos não negativos para os seis eixos, com ao menos um peso positivo.';
  }
  return null;
 }
