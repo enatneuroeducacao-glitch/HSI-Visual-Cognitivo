@@ -128,6 +128,7 @@ function App() {
   >([]);
   const [results, setResults] = useState<SavedResult[]>([]);
   const [behavioralResults, setBehavioralResults] = useState<any[]>([]);
+  const [participantDrafts, setParticipantDrafts] = useState<Record<string, any>>({});
   const [finishConfirmation, setFinishConfirmation] = useState(false);
   const [pendingFinalAnswers, setPendingFinalAnswers] = useState<typeof answers>([]);
   const [view, setView] = useState('home');
@@ -154,9 +155,10 @@ function App() {
 
   const loadResults = async () => {
     try {
-      const [response, behavioral] = await Promise.all([api.get('/api/results'), api.get('/api/instrument-results')]);
+      const [response, behavioral, drafts] = await Promise.all([api.get('/api/results'), api.get('/api/instrument-results'), api.get('/api/participant/drafts')]);
       setResults(response.data.results || []);
       setBehavioralResults(behavioral.data.results || []);
+      setParticipantDrafts(Object.fromEntries((drafts.data.drafts || []).map((draft:any)=>[draft.instrument,draft.payload])));
     } catch {
       setSaveError(
         'Não foi possível carregar o histórico. Verifique sua conexão e tente novamente.'
@@ -167,6 +169,16 @@ function App() {
   useEffect(() => {
     if (user) loadResults();
   }, [user]);
+
+  useEffect(() => {
+    if (view !== 'test' || !runQuestions.length) return;
+    const timer = window.setTimeout(() => {
+      api.put('/api/participant/drafts/HSI Visual Cognitivo', {payload:{version:1,mode,runQuestions,index,answers,selected,elapsed}})
+        .then(() => setParticipantDrafts(prev=>({...prev,'HSI Visual Cognitivo':{version:1,mode,runQuestions,index,answers,selected,elapsed}})))
+        .catch(() => setSaveError('Não foi possível salvar o progresso neste momento. Mantenha esta página aberta e tente novamente.'));
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [view,runQuestions,index,answers,selected,mode]);
 
   useEffect(() => {
     if (view !== 'test') return;
@@ -376,6 +388,22 @@ function App() {
     setView('test');
   };
 
+  const resumeCognitiveDraft = () => {
+    const draft = participantDrafts['HSI Visual Cognitivo'];
+    if (!draft || draft.version !== 1 || !Array.isArray(draft.runQuestions) || !draft.runQuestions.length || !Array.isArray(draft.answers)) return;
+    setRunQuestions(draft.runQuestions);
+    setMode(draft.mode === 'axis' ? 'axis' : 'full');
+    setIndex(Math.min(Number(draft.index)||0,draft.runQuestions.length-1));
+    setAnswers(draft.answers);
+    setSelected(Number.isInteger(draft.selected) ? draft.selected : null);
+    const savedElapsed = Math.max(0,Number(draft.elapsed)||0);
+    setElapsed(savedElapsed);
+    setStartedAt(Date.now()-savedElapsed*1000);
+    setQuestionStartedAt(Date.now());
+    setSaveError('');
+    setView('test');
+  };
+
   const finishTest = async (finalAnswers: typeof answers) => {
     const totalSeconds = Math.max(1, Math.floor((Date.now() - startedAt) / 1000));
     const payload = {
@@ -394,6 +422,7 @@ function App() {
     try {
       const response = await api.post('/api/results', payload);
       setLastResult(response.data.result as SavedResult);
+      await api.delete('/api/participant/drafts/HSI Visual Cognitivo');
       await loadResults();
       setView('result');
     } catch (error: any) {
@@ -436,6 +465,7 @@ function App() {
     setUser(null);
     setResults([]);
     setBehavioralResults([]);
+    setParticipantDrafts({});
     setFinishConfirmation(false);
     setView('home');
   };
@@ -558,6 +588,10 @@ function App() {
             participantCode={user.participantCode}
             cognitiveApplications={results.length}
             behavioralApplications={behavioralResults.length}
+            cognitiveDraftAvailable={Boolean(participantDrafts['HSI Visual Cognitivo'])}
+            behavioralDraftAvailable={Boolean(participantDrafts['HSI-DOTH-P'])}
+            onResumeCognitive={resumeCognitiveDraft}
+            onResumeBehavioral={() => setView('dothp')}
             onStartCognitive={() => setView('cognitive-intro')}
             onStartBehavioral={() => setView('dothp-intro')}
             onHistory={() => { setView('history'); loadResults(); }}
