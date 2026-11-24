@@ -62,7 +62,7 @@ type AuthUser = {
   participantCode: string | null; groupId: string | null; publicAccess?: boolean;
   birthDate?: Date | null; sex?: string | null; city?: string | null; state?: string | null;
   licenseCategory?: string | null; institutionType?: string | null; institutionName?: string | null;
-  groupSector?: string | null; researchConsentVersion?: string | null; researchConsentedAt?: Date | null;
+  groupSector?: string | null; privacyNoticeVersion?: string | null; privacyAcknowledgedAt?: Date | null; researchConsentVersion?: string | null; researchConsentedAt?: Date | null;
 };
 declare global { namespace Express { interface Request { authUser?: AuthUser } } }
 
@@ -88,7 +88,7 @@ const publicUser = (u: AuthUser) => ({
   researchProfile: (u.publicAccess || u.birthDate || u.sex || u.city || u.state || u.institutionType || (u as any).researchConsentGranted || u.researchConsentVersion) ? {
     birthDate: u.birthDate ? u.birthDate.toISOString().slice(0, 10) : null,
     sex: u.sex, licenseCategory: u.licenseCategory, city: u.city, state: u.state,
-    institutionType: u.institutionType, institutionName: u.institutionName, groupSector: u.groupSector,
+    institutionType: u.institutionType, institutionName: u.institutionName, groupSector: u.groupSector, privacyNoticeVersion:(u as any).privacyNoticeVersion, privacyAcknowledgedAt:(u as any).privacyAcknowledgedAt,
     researchConsent: Boolean((u as any).researchConsentGranted), researchConsentVersion: u.researchConsentVersion
   } : null
 });
