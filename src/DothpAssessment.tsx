@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from './lib/api';
 import { getDothpContextHint, getDothpContextQuestion } from './dothp-contexts';
 
-const dimensions = [
+const defaultDimensions = [
  {id:'decision',name:'Decisão',subtitle:'Análise de alternativas, consequências e escolhas conscientes'},
  {id:'organization',name:'Organização',subtitle:'Planejamento, prioridades, consistência e gestão de recursos'},
  {id:'time',name:'Tempo',subtitle:'Percepção temporal, pontualidade, ritmo e equilíbrio de demandas'},
@@ -10,7 +10,7 @@ const dimensions = [
  {id:'psychocomportamental',name:'Psicocomportamental',subtitle:'Autopercepção, regulação emocional, padrões de reação e flexibilidade'}
 ];
 
-const items = [
+const defaultItems = [
  ['decision','Quando preciso tomar uma decisão importante, procuro considerar mais de uma alternativa.'],
  ['decision','Antes de agir, costumo avaliar possíveis consequências para mim e para outras pessoas.'],
  ['decision','Consigo rever uma escolha quando surgem informações relevantes que eu não tinha considerado.'],
@@ -38,7 +38,7 @@ const items = [
  ['psychocomportamental','Depois de uma situação difícil, costumo refletir sobre o que senti e como agi.']
 ] as const;
 
-const reverse = new Set([3,8,13,18,23]);
+const defaultReverse = new Set([3,8,13,18,23]);
 const scale = ['Discordo totalmente','Discordo parcialmente','Nem concordo nem discordo','Concordo parcialmente','Concordo totalmente'];
 
 type ParticipantData = {
@@ -48,6 +48,12 @@ type ParticipantData = {
 type Props = { participantData?:ParticipantData|null };
 export default function DothpAssessment({participantData=null}:Props={}){
  const [context,setContext]=useState('cotidiano');
+ const [dimensions,setDimensions]=useState<any[]>(defaultDimensions);
+ const [items,setItems]=useState<Array<[string,string]>>(defaultItems.map(([a,b])=>[a,b]));
+ const [reverse,setReverse]=useState<Set<number>>(defaultReverse);
+ const [scoringCriteria,setScoringCriteria]=useState<any>({scale:{min:1,max:5},scoreRange:{min:0,max:100},bands:{low:{maxExclusive:34},high:{min:67}}});
+ const [instrumentVersion,setInstrumentVersion]=useState('1.0');
+ const [definitionLoading,setDefinitionLoading]=useState(true);
  const [answers,setAnswers]=useState<Record<number,number>>({});
  const [showResult,setShowResult]=useState(false);
  const [saving,setSaving]=useState(false);
@@ -63,14 +69,16 @@ export default function DothpAssessment({participantData=null}:Props={}){
  const [institutionName,setInstitutionName]=useState(participantData?.institutionName||'');
  const [groupSector,setGroupSector]=useState(participantData?.groupSector||'');
  const [profileError,setProfileError]=useState('');
+ useEffect(()=>{let mounted=true;api.get('/api/instrument-definition').then(r=>{if(!mounted)return;const data=r.data;setInstrumentVersion(data.version||'1.0');setItems((data.questions||[]).map((q:any)=>[String(q.dimension||q.dimensionId),String(q.prompt||q.statement||'')]));if(data.scoringCriteria?.dimensions)setDimensions(data.scoringCriteria.dimensions);setScoringCriteria(data.scoringCriteria||{});setReverse(new Set((data.scoringCriteria?.reverseItems||[]).map((n:number)=>Number(n)-1)));}).catch(()=>{}).finally(()=>{if(mounted)setDefinitionLoading(false);});return()=>{mounted=false;};},[]);
  const profileComplete=participantData?true:Boolean(birthDate&&sex&&city.trim()&&state.trim().length===2&&institutionType);
- const complete=Object.keys(answers).length===25;
+ const complete=Object.keys(answers).length===items.length;
  const results=useMemo(()=>dimensions.map(d=>{
    const indices=items.map((q,i)=>q[0]===d.id?i:-1).filter(i=>i>=0);
    const values=indices.map(i=>reverse.has(i)?6-answers[i]:answers[i]).filter(v=>Number.isFinite(v));
    const mean=values.length?values.reduce((a,b)=>a+b,0)/values.length:0;
-   return {...d,mean,index:Math.round((mean-1)*25),answered:values.length};
- }),[answers]);
+   const min=Number(scoringCriteria.scale?.min??1),max=Number(scoringCriteria.scale?.max??5),scoreMin=Number(scoringCriteria.scoreRange?.min??0),scoreMax=Number(scoringCriteria.scoreRange?.max??100);
+   return {...d,mean,index:values.length?Math.round(scoreMin+((mean-min)/(max-min))*(scoreMax-scoreMin)):0,answered:values.length};
+ }),[answers,items,dimensions,reverse,scoringCriteria]);
  const setAnswer=(i:number,v:number)=>{setAnswers(prev=>({...prev,[i]:v}));setShowResult(false)};
  const reset=()=>{setAnswers({});setShowResult(false);setSaveError('');setSaved(false);setResearchConsent(false);setProfileError('')};
  const saveAndShowResult=async()=>{
@@ -78,14 +86,14 @@ export default function DothpAssessment({participantData=null}:Props={}){
   if(!profileComplete){setProfileError('Preencha data de nascimento, sexo, município, UF e tipo de vínculo para continuar.');return;}
   setSaving(true);setSaveError('');setProfileError('');
   try{
-   await api.post('/api/instrument-results',{id:crypto.randomUUID(),instrument:'HSI-DOTH-P',context,contextVersion:'1.1',instrumentVersion:'1.1',...((participantData?.researchConsent??researchConsent)?{consentVersion:'ENAT-RESEARCH-1.0'}:{}),participantData:{birthDate:participantData?.birthDate||birthDate,sex:participantData?.sex||sex,licenseCategory:participantData?.licenseCategory??(licenseCategory||null),city:participantData?.city||city.trim(),state:participantData?.state||state.trim().toUpperCase(),country:'BR',institutionType:participantData?.institutionType||institutionType,institutionName:participantData?.institutionName??(institutionName.trim()||null),groupSector:participantData?.groupSector??(groupSector.trim()||null)},answers:items.map((_,i)=>answers[i])});
+   await api.post('/api/instrument-results',{id:crypto.randomUUID(),instrument:'HSI-DOTH-P',context,contextVersion:'1.1',instrumentVersion,...((participantData?.researchConsent??researchConsent)?{consentVersion:'ENAT-RESEARCH-1.0'}:{}),participantData:{birthDate:participantData?.birthDate||birthDate,sex:participantData?.sex||sex,licenseCategory:participantData?.licenseCategory??(licenseCategory||null),city:participantData?.city||city.trim(),state:participantData?.state||state.trim().toUpperCase(),country:'BR',institutionType:participantData?.institutionType||institutionType,institutionName:participantData?.institutionName??(institutionName.trim()||null),groupSector:participantData?.groupSector??(groupSector.trim()||null)},answers:items.map((_,i)=>answers[i])});
    setSaved(true);setShowResult(true);
   }catch(error:any){setSaveError(error?.response?.data?.error||'Não foi possível registrar suas respostas. Verifique a conexão e tente novamente.');}
   finally{setSaving(false);}
  };
  return <section className="dothp-workspace">
-  <header className="dothp-hero"><span className="eyebrow">INSTRUMENTO COMPORTAMENTAL · HSI-DOTH-P</span><h1>Comportamento em diferentes contextos da vida</h1><p>Uma autoavaliação estruturada sobre decisões, organização, tempo, humanização e padrões psicocomportamentais. Não é limitada ao trânsito.</p><div className="dothp-tags"><span>25 afirmações</span><span>5 dimensões</span><span>Escala Likert de 1 a 5</span><span>Versão piloto</span></div></header>
-  {!showResult?<>{!participantData && <section className="dothp-participant-data" aria-labelledby="dothp-participant-title">
+  <header className="dothp-hero"><span className="eyebrow">INSTRUMENTO COMPORTAMENTAL · HSI-DOTH-P</span><h1>Comportamento em diferentes contextos da vida</h1><p>Uma autoavaliação estruturada sobre decisões, organização, tempo, humanização e padrões psicocomportamentais. Não é limitada ao trânsito.</p><div className="dothp-tags"><span>25 afirmações</span><span>5 dimensões</span><span>Escala Likert de 1 a 5</span><span>Versão {instrumentVersion}</span></div></header>
+  {definitionLoading?<div className="notice">Carregando a versão vigente do instrumento…</div>:!showResult?<>{!participantData && <section className="dothp-participant-data" aria-labelledby="dothp-participant-title">
    <div className="dothp-participant-heading"><span className="eyebrow">IDENTIFICAÇÃO PARA PESQUISA</span><h2 id="dothp-participant-title">Dados do respondente</h2><p>Essas informações permitem análises territoriais e sociodemográficas. O nome da instituição é opcional e não é necessário ter cadastro prévio.</p></div>
    <div className="dothp-profile-grid">
     <label>Data de nascimento<input type="date" required max={new Date().toISOString().slice(0,10)} value={birthDate} onChange={e=>setBirthDate(e.target.value)}/></label>
