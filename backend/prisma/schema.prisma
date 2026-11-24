@@ -55,6 +55,7 @@ model User {
   group              ParticipantGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   results            AssessmentResult[]
   instrumentResults  InstrumentAssessment[]
+  participantDrafts  ParticipantDraft[]
   resetTokens        PasswordResetToken[]
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
@@ -326,4 +327,17 @@ model RetentionPolicy {
   active Boolean @default(true)
   updatedBy String?
   updatedAt DateTime @updatedAt
+}
+
+
+model ParticipantDraft {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instrument String
+  payload   Json
+  updatedAt DateTime @updatedAt
+  expiresAt DateTime
+  @@unique([userId, instrument])
+  @@index([expiresAt])
 }

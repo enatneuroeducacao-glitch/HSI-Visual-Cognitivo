@@ -437,6 +437,38 @@ const resultSchema = z.object({
   instrumentVersion:z.string().trim().min(1).max(20).default('1.0'),
   answerDetails:z.array(z.object({ questionId:z.string().min(1).max(40), axisId:z.string().min(1).max(40), selected:z.number().int().min(0).max(3), seconds:z.number().int().min(1).max(3600) }).strict()).min(1).max(30),
 }).strict();
+const participantDraftSchema = z.object({ payload:z.record(z.string(),z.unknown()) }).strict();
+const participantDraftInstruments = ['HSI Visual Cognitivo','HSI-DOTH-P'] as const;
+app.get('/api/participant/drafts', authenticate, asyncRoute(async (req,res) => {
+  const now = new Date();
+  await prisma.participantDraft.deleteMany({where:{userId:req.authUser!.id,expiresAt:{lte:now}}});
+  const drafts = await prisma.participantDraft.findMany({where:{userId:req.authUser!.id,expiresAt:{gt:now}},select:{instrument:true,payload:true,updatedAt:true,expiresAt:true}});
+  res.setHeader('Cache-Control','no-store');
+  res.json({drafts});
+}));
+app.put('/api/participant/drafts/:instrument', authenticate, asyncRoute(async (req,res) => {
+  const instrument = String(req.params.instrument || '');
+  if (!participantDraftInstruments.includes(instrument as any)) return res.status(400).json({error:'Instrumento inválido.'});
+  const parsed = participantDraftSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({error:'Rascunho inválido.'});
+  const serialized = JSON.stringify(parsed.data.payload);
+  if (serialized.length > 150000) return res.status(413).json({error:'O progresso excede o limite permitido.'});
+  const now = new Date();
+  const draft = await prisma.participantDraft.upsert({
+    where:{userId_instrument:{userId:req.authUser!.id,instrument}},
+    create:{userId:req.authUser!.id,instrument,payload:parsed.data.payload as Prisma.InputJsonValue,expiresAt:new Date(now.getTime()+30*24*60*60*1000)},
+    update:{payload:parsed.data.payload as Prisma.InputJsonValue,expiresAt:new Date(now.getTime()+30*24*60*60*1000)}
+  });
+  res.setHeader('Cache-Control','no-store');
+  res.json({saved:true,updatedAt:draft.updatedAt,expiresAt:draft.expiresAt});
+}));
+app.delete('/api/participant/drafts/:instrument', authenticate, asyncRoute(async (req,res) => {
+  const instrument = String(req.params.instrument || '');
+  if (!participantDraftInstruments.includes(instrument as any)) return res.status(400).json({error:'Instrumento inválido.'});
+  await prisma.participantDraft.deleteMany({where:{userId:req.authUser!.id,instrument}});
+  res.json({deleted:true});
+}));
+
 app.get('/api/results', authenticate, asyncRoute(async (req,res) => {
   const rows=await prisma.assessmentResult.findMany({where:{userId:req.authUser!.id},orderBy:{completedAt:'desc'},take:200});
   res.json({results:rows.map(r=>({...r,completedAt:r.completedAt.toISOString()}))});

@@ -45,8 +45,8 @@ type ParticipantData = {
  birthDate:string; sex:'M'|'F'; licenseCategory?:string|null; city:string; state:string;
  institutionType:string; institutionName?:string|null; groupSector?:string|null; researchConsent?:boolean;
 };
-type Props = { participantData?:ParticipantData|null };
-export default function DothpAssessment({participantData=null}:Props={}){
+type Props = { participantData?:ParticipantData|null; resumeDraft?:boolean };
+export default function DothpAssessment({participantData=null,resumeDraft=false}:Props={}){
  const [context,setContext]=useState('cotidiano');
  const [dimensions,setDimensions]=useState<any[]>(defaultDimensions);
  const [items,setItems]=useState<Array<[string,string]>>(defaultItems.map(([a,b])=>[a,b] as [string,string]));
@@ -61,6 +61,7 @@ export default function DothpAssessment({participantData=null}:Props={}){
  const [saving,setSaving]=useState(false);
  const [saveError,setSaveError]=useState('');
  const [saved,setSaved]=useState(false);
+ const [confirmFinish,setConfirmFinish]=useState(false);
  const [researchConsent,setResearchConsent]=useState(Boolean(participantData?.researchConsent));
  const [birthDate,setBirthDate]=useState(participantData?.birthDate||'');
  const [sex,setSex]=useState(participantData?.sex||'');
@@ -71,9 +72,10 @@ export default function DothpAssessment({participantData=null}:Props={}){
  const [institutionName,setInstitutionName]=useState(participantData?.institutionName||'');
  const [groupSector,setGroupSector]=useState(participantData?.groupSector||'');
  const [profileError,setProfileError]=useState('');
- useEffect(()=>{let mounted=true;api.get('/api/instrument-definition').then(r=>{if(!mounted)return;const data=r.data;setInstrumentVersion(data.version||'1.0');setItems((data.questions||[]).map((q:any)=>[String(q.dimension||q.dimensionId),String(q.prompt||q.statement||'')]));if(data.scoringCriteria?.dimensions)setDimensions(data.scoringCriteria.dimensions);setScoringCriteria(data.scoringCriteria||{});setReverse(new Set((data.scoringCriteria?.reverseItems||[]).map((n:number)=>Number(n)-1)));}).catch(()=>{}).finally(()=>{if(mounted)setDefinitionLoading(false);});return()=>{mounted=false;};},[]);
+ useEffect(()=>{let mounted=true;api.get('/api/instrument-definition').then(async r=>{if(!mounted)return;const data=r.data;setInstrumentVersion(data.version||'1.0');setItems((data.questions||[]).map((q:any)=>[String(q.dimension||q.dimensionId),String(q.prompt||q.statement||'')]));if(data.scoringCriteria?.dimensions)setDimensions(data.scoringCriteria.dimensions);setScoringCriteria(data.scoringCriteria||{});setReverse(new Set((data.scoringCriteria?.reverseItems||[]).map((n:number)=>Number(n)-1)));if(resumeDraft){try{const drafts=await api.get('/api/participant/drafts');const draft=(drafts.data.drafts||[]).find((x:any)=>x.instrument==='HSI-DOTH-P')?.payload;if(draft?.version===1&&draft.instrumentVersion===String(data.version||'1.0')&&draft.answers&&typeof draft.answers==='object'){setAnswers(draft.answers);setContext(draft.context||'cotidiano');}}catch{}}}).catch(()=>{}).finally(()=>{if(mounted)setDefinitionLoading(false);});return()=>{mounted=false;};},[]);
  const profileComplete=participantData?true:Boolean(birthDate&&sex&&city.trim()&&state.trim().length===2&&institutionType);
  const complete=Object.keys(answers).length===items.length;
+ useEffect(()=>{if(definitionLoading||showResult||!Object.keys(answers).length)return;const timer=window.setTimeout(()=>{api.put('/api/participant/drafts/HSI-DOTH-P',{payload:{version:1,instrumentVersion,context,answers}}).catch(()=>setSaveError('Não foi possível salvar o progresso agora. Mantenha esta página aberta e tente novamente.'));},500);return()=>window.clearTimeout(timer);},[answers,context,instrumentVersion,definitionLoading,showResult]);
  const results=useMemo(()=>dimensions.map(d=>{
    const indices=items.map((q,i)=>q[0]===d.id?i:-1).filter(i=>i>=0);
    const values=indices.map(i=>reverse.has(i)?6-answers[i]:answers[i]).filter(v=>Number.isFinite(v));
@@ -82,14 +84,14 @@ export default function DothpAssessment({participantData=null}:Props={}){
    return {...d,mean,index:values.length?Math.round(scoreMin+((mean-min)/(max-min))*(scoreMax-scoreMin)):0,answered:values.length};
  }),[answers,items,dimensions,reverse,scoringCriteria]);
  const setAnswer=(i:number,v:number)=>{setAnswers(prev=>({...prev,[i]:v}));setShowResult(false)};
- const reset=()=>{setAnswers({});setShowResult(false);setSaveError('');setSaved(false);setResearchConsent(false);setProfileError('')};
+ const reset=()=>{void api.delete('/api/participant/drafts/HSI-DOTH-P').catch(()=>undefined);setAnswers({});setShowResult(false);setConfirmFinish(false);setSaveError('');setSaved(false);setResearchConsent(false);setProfileError('')};
  const saveAndShowResult=async()=>{
   if(!complete||saving)return;
   if(!profileComplete){setProfileError('Preencha data de nascimento, sexo, município, UF e tipo de vínculo para continuar.');return;}
   setSaving(true);setSaveError('');setProfileError('');
   try{
    await api.post('/api/instrument-results',{id:crypto.randomUUID(),instrument:'HSI-DOTH-P',context,contextVersion:'1.1',instrumentVersion,researchConsent,participantData:{birthDate:participantData?.birthDate||birthDate,sex:participantData?.sex||sex,licenseCategory:participantData?.licenseCategory??(licenseCategory||null),city:participantData?.city||city.trim(),state:participantData?.state||state.trim().toUpperCase(),country:'BR',institutionType:participantData?.institutionType||institutionType,institutionName:participantData?.institutionName??(institutionName.trim()||null),groupSector:participantData?.groupSector??(groupSector.trim()||null)},answers:items.map((_,i)=>answers[i]),...(studyCode.trim()?{studyCode:studyCode.trim().toUpperCase(),...(studyGroupCode.trim()?{studyGroupCode:studyGroupCode.trim().toUpperCase()}:{})}:{})});
-   setSaved(true);setShowResult(true);
+   await api.delete('/api/participant/drafts/HSI-DOTH-P').catch(()=>undefined);setSaved(true);setShowResult(true);
   }catch(error:any){setSaveError(error?.response?.data?.error||'Não foi possível registrar suas respostas. Verifique a conexão e tente novamente.');}
   finally{setSaving(false);}
  };
@@ -115,8 +117,8 @@ export default function DothpAssessment({participantData=null}:Props={}){
   {dimensions.map((d,di)=><section className="dothp-dimension" key={d.id}><div className="dothp-dimension-head"><span>DIMENSÃO 0{di+1}</span><h2>{d.name}</h2><p>{d.subtitle}</p><p className="dothp-context-guidance"><strong>Foco contextual:</strong> {getDothpContextHint(context,d.id)}</p></div>
   {items.map((q,i)=>q[0]===d.id?<article className="dothp-question" key={i}><div className="dothp-question-title"><b>{String(i+1).padStart(2,'0')}</b><p>{getDothpContextQuestion(context,q[0],items.slice(0,i).filter(item=>item[0]===q[0]).length,q[1])}</p></div><div className="dothp-options">{scale.map((label,j)=><label className={answers[i]===j+1?'chosen':''} key={j}><input type="radio" name={'dothp-'+i} checked={answers[i]===j+1} onChange={()=>setAnswer(i,j+1)}/><span>{j+1}</span><small>{label}</small></label>)}</div></article>:null)}
   </section>)}
-  <label className="dothp-research-consent"><input type="checkbox" checked={researchConsent} onChange={e=>setResearchConsent(e.target.checked)}/><span><strong>Autorizo o uso desta aplicação em pesquisas ENAT (opcional).</strong> Esta escolha é independente do aviso de privacidade. Posso realizar a avaliação sem autorizar a pesquisa e retirar a autorização posteriormente. Versão do termo: ENAT-RESEARCH-1.1.</span></label><div className="dothp-actions"><button className="secondary" onClick={reset}>Limpar respostas</button><button className="primary" disabled={!complete||!profileComplete||saving} onClick={saveAndShowResult}>{saving?'Registrando respostas…':'Calcular perfil dimensional e salvar'}</button></div>
-  </>:<><section className="dothp-results"><span className="eyebrow">DEVOLUTIVA DESCRITIVA · {context.toUpperCase()}</span>{saved&&<div className="dothp-saved-notice">Avaliação registrada no histórico da sua participação.</div>}<h2>Panorama por dimensão</h2><p>Os resultados abaixo representam somente suas respostas nesta aplicação. Não existe nota geral nem classificação de aprovação.</p>
+  <label className="dothp-research-consent"><input type="checkbox" checked={researchConsent} onChange={e=>setResearchConsent(e.target.checked)}/><span><strong>Autorizo o uso desta aplicação em pesquisas ENAT (opcional).</strong> Esta escolha é independente do aviso de privacidade. Posso realizar a avaliação sem autorizar a pesquisa e retirar a autorização posteriormente. Versão do termo: ENAT-RESEARCH-1.1.</span></label><div className="dothp-actions"><button className="secondary" onClick={reset}>Limpar respostas</button><button className="primary" disabled={!complete||!profileComplete||saving} onClick={()=>setConfirmFinish(true)}>{saving?'Registrando respostas…':'Revisar e finalizar avaliação'}</button></div>
+  {confirmFinish&&<div className="participant-modal-backdrop" role="presentation"><section className="participant-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="dothp-confirm-title"><span className="eyebrow">CONFIRMAÇÃO DE ENVIO</span><h2 id="dothp-confirm-title">Deseja finalizar sua autoavaliação?</h2><p>Você respondeu às {Object.keys(answers).length} afirmações. Ao confirmar, suas respostas serão registradas e a devolutiva dimensional será apresentada.</p><div className="participant-modal-actions"><button className="participant-secondary" onClick={()=>setConfirmFinish(false)} disabled={saving}>Voltar e revisar</button><button className="participant-primary" onClick={()=>{setConfirmFinish(false);void saveAndShowResult();}} disabled={saving}>{saving?'Salvando…':'Confirmar e finalizar'}</button></div></section></div>}</>:<><section className="dothp-results"><span className="eyebrow">DEVOLUTIVA DESCRITIVA · {context.toUpperCase()}</span>{saved&&<div className="dothp-saved-notice">Avaliação registrada no histórico da sua participação.</div>}<h2>Panorama por dimensão</h2><p>Os resultados abaixo representam somente suas respostas nesta aplicação. Não existe nota geral nem classificação de aprovação.</p>
   {results.map(d=><article className="dothp-result" key={d.id}><div><h3>{d.name}</h3><strong>{d.index}/100</strong></div><div className="dothp-track"><i style={{width:d.index+'%'}}/></div><small>Média {d.mean.toFixed(2).replace('.',',')} de 5 · {d.answered} afirmações</small><p>{d.index<34?'Nesta aplicação, as respostas indicam um espaço possível para reflexão e desenvolvimento nesta dimensão.':d.index<67?'Nesta aplicação, as respostas sugerem aspectos relativamente presentes e outros que podem ser fortalecidos.':'Nesta aplicação, as respostas indicam maior frequência de comportamentos associados a esta dimensão.'}</p></article>)}
   <div className="dothp-notice"><strong>Limites metodológicos:</strong> instrumento em versão piloto, sem validação psicométrica estabelecida. As faixas são apenas descrições internas da aplicação, não normas populacionais. Não constitui diagnóstico, avaliação clínica, seleção profissional, avaliação de personalidade, aptidão ou decisão automatizada sobre pessoas. Um resultado isolado não define um indivíduo.</div>
   <div className="dothp-actions"><button className="secondary" onClick={()=>setShowResult(false)}>Revisar respostas</button><button className="primary" onClick={reset}>Nova aplicação</button></div></section></>}
