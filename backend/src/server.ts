@@ -651,8 +651,8 @@ app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN,UserRole.ANALY
   const to=typeof req.query.to==='string'?new Date(req.query.to):new Date();
   const groupId=typeof req.query.groupId==='string'?req.query.groupId:undefined;
   if(!Number.isFinite(from.getTime())||!Number.isFinite(to.getTime())||from>to)return res.status(400).json({error:'Período inválido.'});
-  const userFilter={...(groupId?{groupId}:{}),OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]};
-  const where={completedAt:{gte:from,lte:to},user:userFilter};
+  const userFilter={...(groupId?{groupId}:{})};
+  const where={completedAt:{gte:from,lte:to},researchConsentGranted:true,user:userFilter};
   const [cognitive,instruments]=await Promise.all([
     prisma.assessmentResult.findMany({where,select:{userId:true,totalQuestions:true,correct:true,axes:true,answerDetails:true,completedAt:true}}),
     prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},researchConsentGranted:true,user:userFilter},select:{userId:true,context:true,dimensions:true,answers:true,completedAt:true}})
@@ -812,7 +812,7 @@ async function getResearchAggregate(query:Record<string,unknown>){
   const to=parsed.data.to?new Date(parsed.data.to):new Date();
   if(from>to)throw Object.assign(new Error('Período inválido.'),{status:400});
   const rows=await prisma.instrumentAssessment.findMany({
-    where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},researchConsentGranted:true,...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
+    where:{completedAt:{gte:from,lte:to},researchConsentGranted:true,...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
     select:{userId:true,institutionId:true,city:true,state:true,context:true,dimensions:true,institutionType:true,institutionName:true,groupSector:true,institution:{select:{name:true,type:true,city:true,state:true}},completedAt:true}
   });
   const participants=new Set(rows.map(x=>x.userId)).size;
@@ -1066,8 +1066,8 @@ app.get('/api/science/studies/compare',authenticate,allow(UserRole.ADMIN,UserRol
  if(studies.length!==new Set(codes).size)return res.status(404).json({error:'Um ou mais estudos não foram encontrados.'});
  const results=await Promise.all(studies.map(async study=>{
    const [cognitive,behavioral]=await Promise.all([
-     prisma.assessmentResult.findMany({where:{studyId:study.id,user:{OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]}},select:{userId:true,accuracy:true,correct:true,totalQuestions:true,axes:true,instrumentVersion:true,versionVerification:true}}),
-     prisma.instrumentAssessment.findMany({where:{studyId:study.id,consentVersion:{not:null},user:{OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]}},select:{userId:true,dimensions:true,instrumentVersion:true,versionVerification:true}})
+     prisma.assessmentResult.findMany({where:{studyId:study.id,researchConsentGranted:true},select:{userId:true,accuracy:true,correct:true,totalQuestions:true,axes:true,instrumentVersion:true,versionVerification:true}}),
+     prisma.instrumentAssessment.findMany({where:{studyId:study.id,researchConsentGranted:true},select:{userId:true,dimensions:true,instrumentVersion:true,versionVerification:true}})
    ]);
    const minimum=5;
    const cognitiveUsers=new Set(cognitive.map(x=>x.userId)).size,behavioralUsers=new Set(behavioral.map(x=>x.userId)).size;
