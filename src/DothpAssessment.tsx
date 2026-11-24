@@ -45,8 +45,8 @@ type ParticipantData = {
  birthDate:string; sex:'M'|'F'; licenseCategory?:string|null; city:string; state:string;
  institutionType:string; institutionName?:string|null; groupSector?:string|null; researchConsent?:boolean;
 };
-type Props = { participantData?:ParticipantData|null };
-export default function DothpAssessment({participantData=null}:Props={}){
+type Props = { participantData?:ParticipantData|null; resumeDraft?:boolean };
+export default function DothpAssessment({participantData=null,resumeDraft=false}:Props={}){
  const [context,setContext]=useState('cotidiano');
  const [dimensions,setDimensions]=useState<any[]>(defaultDimensions);
  const [items,setItems]=useState<Array<[string,string]>>(defaultItems.map(([a,b])=>[a,b] as [string,string]));
@@ -72,9 +72,10 @@ export default function DothpAssessment({participantData=null}:Props={}){
  const [institutionName,setInstitutionName]=useState(participantData?.institutionName||'');
  const [groupSector,setGroupSector]=useState(participantData?.groupSector||'');
  const [profileError,setProfileError]=useState('');
- useEffect(()=>{let mounted=true;api.get('/api/instrument-definition').then(r=>{if(!mounted)return;const data=r.data;setInstrumentVersion(data.version||'1.0');setItems((data.questions||[]).map((q:any)=>[String(q.dimension||q.dimensionId),String(q.prompt||q.statement||'')]));if(data.scoringCriteria?.dimensions)setDimensions(data.scoringCriteria.dimensions);setScoringCriteria(data.scoringCriteria||{});setReverse(new Set((data.scoringCriteria?.reverseItems||[]).map((n:number)=>Number(n)-1)));}).catch(()=>{}).finally(()=>{if(mounted)setDefinitionLoading(false);});return()=>{mounted=false;};},[]);
+ useEffect(()=>{let mounted=true;api.get('/api/instrument-definition').then(async r=>{if(!mounted)return;const data=r.data;setInstrumentVersion(data.version||'1.0');setItems((data.questions||[]).map((q:any)=>[String(q.dimension||q.dimensionId),String(q.prompt||q.statement||'')]));if(data.scoringCriteria?.dimensions)setDimensions(data.scoringCriteria.dimensions);setScoringCriteria(data.scoringCriteria||{});setReverse(new Set((data.scoringCriteria?.reverseItems||[]).map((n:number)=>Number(n)-1)));if(resumeDraft){try{const drafts=await api.get('/api/participant/drafts');const draft=(drafts.data.drafts||[]).find((x:any)=>x.instrument==='HSI-DOTH-P')?.payload;if(draft?.version===1&&draft.instrumentVersion===String(data.version||'1.0')&&draft.answers&&typeof draft.answers==='object'){setAnswers(draft.answers);setContext(draft.context||'cotidiano');}}catch{}}}).catch(()=>{}).finally(()=>{if(mounted)setDefinitionLoading(false);});return()=>{mounted=false;};},[]);
  const profileComplete=participantData?true:Boolean(birthDate&&sex&&city.trim()&&state.trim().length===2&&institutionType);
  const complete=Object.keys(answers).length===items.length;
+ useEffect(()=>{if(definitionLoading||showResult||!Object.keys(answers).length)return;const timer=window.setTimeout(()=>{api.put('/api/participant/drafts/HSI-DOTH-P',{payload:{version:1,instrumentVersion,context,answers}}).catch(()=>setSaveError('Não foi possível salvar o progresso agora. Mantenha esta página aberta e tente novamente.'));},500);return()=>window.clearTimeout(timer);},[answers,context,instrumentVersion,definitionLoading,showResult]);
  const results=useMemo(()=>dimensions.map(d=>{
    const indices=items.map((q,i)=>q[0]===d.id?i:-1).filter(i=>i>=0);
    const values=indices.map(i=>reverse.has(i)?6-answers[i]:answers[i]).filter(v=>Number.isFinite(v));
@@ -90,7 +91,7 @@ export default function DothpAssessment({participantData=null}:Props={}){
   setSaving(true);setSaveError('');setProfileError('');
   try{
    await api.post('/api/instrument-results',{id:crypto.randomUUID(),instrument:'HSI-DOTH-P',context,contextVersion:'1.1',instrumentVersion,researchConsent,participantData:{birthDate:participantData?.birthDate||birthDate,sex:participantData?.sex||sex,licenseCategory:participantData?.licenseCategory??(licenseCategory||null),city:participantData?.city||city.trim(),state:participantData?.state||state.trim().toUpperCase(),country:'BR',institutionType:participantData?.institutionType||institutionType,institutionName:participantData?.institutionName??(institutionName.trim()||null),groupSector:participantData?.groupSector??(groupSector.trim()||null)},answers:items.map((_,i)=>answers[i]),...(studyCode.trim()?{studyCode:studyCode.trim().toUpperCase(),...(studyGroupCode.trim()?{studyGroupCode:studyGroupCode.trim().toUpperCase()}:{})}:{})});
-   setSaved(true);setShowResult(true);
+   await api.delete('/api/participant/drafts/HSI-DOTH-P');setSaved(true);setShowResult(true);
   }catch(error:any){setSaveError(error?.response?.data?.error||'Não foi possível registrar suas respostas. Verifique a conexão e tente novamente.');}
   finally{setSaving(false);}
  };
