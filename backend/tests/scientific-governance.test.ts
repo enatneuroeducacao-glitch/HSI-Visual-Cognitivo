@@ -21,7 +21,7 @@ test('alterações no banco versionado preservam ordem e dimensão das respostas
  const questions=dothpItems.map(([dimension,prompt],index)=>({id:'q'+(index+1),dimension,prompt:'Versão revisada: '+prompt}));
  const result=scoreDothp(Array(25).fill(3),'trabalho',questions,{reverseItems:[],dimensions:dothpDimensions,scale:{min:1,max:5},scoreRange:{min:0,max:100}});
  assert.equal(result.answers.length,25);
- assert.equal(result.answers[0].statement.includes('trabalho'),true);
+ assert.equal(result.answers[0].statement.includes('Considere especificamente situações'),true);
  assert.equal(result.answers[0].dimensionId,'decision');
  assert.equal(result.dimensions.length,5);
 });
