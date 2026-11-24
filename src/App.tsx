@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { auth, api, publicAccess } from './lib/api';
+import { auth, api } from './lib/api';
 import AdminPanel from './AdminPanel';
 import DothpAssessment from './DothpAssessment';
 import InstrumentHistory from './InstrumentHistory';
@@ -105,11 +105,7 @@ const formatTime = (seconds: number) => {
 function App() {
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [consentUpdating, setConsentUpdating] = useState(false);
-  const [consentFeedback, setConsentFeedback] = useState('');
   const [mode, setMode] = useState('full');
-  const [studyCode,setStudyCode] = useState('');
-  const [studyGroupCode,setStudyGroupCode] = useState('');
   const [researchConsent,setResearchConsent] = useState(false);
   const [runQuestions, setRunQuestions] = useState<Question[]>([]);
   const [index, setIndex] = useState(0);
@@ -415,7 +411,6 @@ function App() {
       durationSeconds: totalSeconds,
       instrumentVersion: '1.0',
       researchConsent,
-      ...(studyCode.trim()?{studyCode:studyCode.trim().toUpperCase(),...(studyGroupCode.trim()?{studyGroupCode:studyGroupCode.trim().toUpperCase()}:{})}:{}),
       answerDetails: finalAnswers.map(({ questionId, axisId, selected, seconds }) => ({ questionId, axisId, selected, seconds })),
     };
     setSaving(true);
@@ -471,21 +466,6 @@ function App() {
     setView('home');
   };
 
-  const togglePublicResearchConsent = async () => {
-    if (!user?.publicAccess || consentUpdating) return;
-    setConsentUpdating(true);
-    setConsentFeedback('');
-    try {
-      const nextValue = !Boolean(user.researchProfile?.researchConsent);
-      const response = await publicAccess.updateResearchConsent(nextValue);
-      setUser(response.data.user);
-      setConsentFeedback(nextValue ? 'Autorização de pesquisa ativada.' : 'Autorização de pesquisa retirada. Novos agregados deixarão de incluir suas aplicações públicas.');
-    } catch (error: any) {
-      setConsentFeedback(error?.response?.data?.error || 'Não foi possível atualizar sua autorização.');
-    } finally {
-      setConsentUpdating(false);
-    }
-  };
 
   if (authLoading)
     return (
@@ -598,6 +578,7 @@ function App() {
             onHistory={() => { setView('history'); loadResults(); }}
             onPrivacy={() => setView('privacy')}
           />
+          <div className="participant-profile-panel"><ResearchProfile user={user} onSaved={setUser} /></div>
         )}
 
         {view === 'cognitive-intro' && (
@@ -611,6 +592,11 @@ function App() {
               <h2>O que será observado</h2>
               <ul><li>Raciocínio lógico e atenção seletiva</li><li>Percepção de padrões e antecipação de situações</li><li>Percepção de riscos no trânsito e tomada de decisão</li></ul>
               <div className="participant-intro-notice"><strong>Antes de começar</strong><p>Responda em um ambiente tranquilo. Leia cada questão com atenção. Você poderá acompanhar seu progresso; ao concluir, será solicitado que confirme o envio.</p><p>Seus resultados serão apresentados somente como descrição desta aplicação, sem classificação clínica ou de aptidão.</p></div>
+              <div className="participant-study-fields">
+                <label>Código do estudo (se recebeu um)<input value={studyCode} onChange={e=>setStudyCode(e.target.value.toUpperCase())} placeholder="Opcional"/></label>
+                <label>Grupo de pesquisa (opcional)<input value={studyGroupCode} onChange={e=>setStudyGroupCode(e.target.value.toUpperCase())} placeholder="Código informado pela equipe"/></label>
+                <label className="participant-research-choice"><input type="checkbox" checked={researchConsent} onChange={e=>setResearchConsent(e.target.checked)}/><span><strong>Autorizo o uso desta aplicação em pesquisas ENAT (opcional).</strong><small>Você pode realizar os exercícios sem autorizar a pesquisa. Versão ENAT-RESEARCH-1.1.</small></span></label>
+              </div>
               <button className="participant-primary" onClick={() => startTest()}>Iniciar exercícios <span aria-hidden="true">→</span></button>
             </div>
           </section>
