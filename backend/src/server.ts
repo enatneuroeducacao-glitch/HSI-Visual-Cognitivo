@@ -10,7 +10,7 @@ import { PrismaClient, UserRole, UserStatus } from '@prisma/client';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { questions } from './question-bank.js';
-import { scoreDothp } from './instrument-scoring.js';
+import { scoreDothp, dothpItems, dothpDimensions } from './instrument-scoring.js';
 import { hasRole, validateAssessmentMode } from './security.js';
 import { analyzeDataQuality } from './data-quality.js';
 
@@ -882,6 +882,130 @@ app.get('/api/admin/data-quality', authenticate, allow(UserRole.ADMIN,UserRole.A
     prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:userFilter},select:{userId:true,answers:true,dimensions:true,completedAt:true,context:true,contextVersion:true,instrumentVersion:true,state:true,city:true,institutionType:true}})
   ]);
   res.json(analyzeDataQuality(cognitive,behavioral,5));
+}));
+
+
+/* Scientific governance: immutable instrument versions, protocols and study cohorts. */
+const instrumentNames = ['HSI-DOTH-P','HSI Visual Cognitivo'] as const;
+const scoringCriteriaFor = (instrument:string) => instrument==='HSI-DOTH-P'
+  ? {scale:'Likert 1–5',reverseItems:[4,9,14,19,24],dimensions:dothpDimensions,formula:'score = round((mean(scored responses) - 1) × 25)',bands:{low:'<34',medium:'34–66',high:'>=67'},contextualized:true}
+  : {method:'structured visual/cognitive tasks',axes:['logic','attention','patterns','anticipation','risk','decision'],formula:'accuracy = round(correct / answered × 100)',timeMetric:'seconds per item',diagnosticUse:false};
+const questionsFor = (instrument:string) => instrument==='HSI-DOTH-P'
+  ? dothpItems.map(([dimension,prompt],index)=>({id:'dothp-'+(index+1),dimension,prompt,reverseScored:[3,8,13,18,23].includes(index)}))
+  : questions.map((q:any)=>({id:q.id,axis:q.axis,prompt:q.prompt,visual:q.visual,options:q.options,answer:q.answer}));
+async function ensureActiveInstrumentVersion(instrument:string) {
+  let version=await prisma.instrumentVersion.findFirst({where:{instrument,status:'ACTIVE'},orderBy:{publishedAt:'desc'}});
+  if(!version) version=await prisma.instrumentVersion.create({data:{
+    instrument,version:'1.0',status:'ACTIVE',changeSummary:'Versão de referência inicial registrada na implantação da governança científica. Aplicações anteriores permanecem classificadas como legado não verificado.',
+    questions:questionsFor(instrument) as Prisma.InputJsonValue,
+    scoringCriteria:scoringCriteriaFor(instrument) as Prisma.InputJsonValue,
+    publishedAt:new Date()
+  }});
+  return version;
+}
+const versionInputSchema=z.object({
+  instrument:z.enum(instrumentNames),version:z.string().trim().min(1).max(30),
+  changeSummary:z.string().trim().min(10).max(3000),
+  questions:z.array(z.record(z.string(),z.unknown())).max(300),
+  scoringCriteria:z.record(z.string(),z.unknown())
+}).strict();
+app.get('/api/science/overview',authenticate,allow(UserRole.ADMIN,UserRole.ANALYST),asyncRoute(async(_req,res)=>{
+  await Promise.all(instrumentNames.map(name=>ensureActiveInstrumentVersion(name)));
+  const [versions,protocols,studies]=await Promise.all([
+    prisma.instrumentVersion.findMany({orderBy:[{instrument:'asc'},{createdAt:'desc'}]}),
+    prisma.studyProtocol.findMany({orderBy:{updatedAt:'desc'}}),
+    prisma.scientificStudy.findMany({include:{protocol:{select:{id:true,title:true,version:true}},groups:{orderBy:{createdAt:'asc'}},_count:{select:{cognitiveResults:true,behavioralResults:true}}},orderBy:{createdAt:'desc'}})
+  ]);
+  res.json({versions,protocols,studies});
+}));
+app.post('/api/science/versions',authenticate,allow(UserRole.ADMIN),asyncRoute(async(req,res)=>{
+  const parsed=versionInputSchema.safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Dados da versão inválidos.',details:parsed.error.flatten()});
+  const v=await prisma.instrumentVersion.create({data:{...parsed.data,status:'DRAFT',createdBy:req.authUser!.id,questions:parsed.data.questions as Prisma.InputJsonValue,scoringCriteria:parsed.data.scoringCriteria as Prisma.InputJsonValue}});
+  await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'INSTRUMENT_VERSION_DRAFT_CREATED',targetType:'INSTRUMENT_VERSION',targetId:v.id,metadata:{instrument:v.instrument,version:v.version}}});
+  res.status(201).json({version:v});
+}));
+app.patch('/api/science/versions/:id',authenticate,allow(UserRole.ADMIN),asyncRoute(async(req,res)=>{
+  const parsed=versionInputSchema.partial().omit({instrument:true,version:true}).safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Alterações inválidas.',details:parsed.error.flatten()});
+  const current=await prisma.instrumentVersion.findUnique({where:{id:req.params.id}});
+  if(!current)return res.status(404).json({error:'Versão não encontrada.'});
+  if(current.status!=='DRAFT'||current.publishedAt)return res.status(409).json({error:'Versões publicadas são imutáveis. Crie uma nova versão para alterar questões ou pontuação.'});
+  const updated=await prisma.instrumentVersion.update({where:{id:current.id},data:{...parsed.data,questions:parsed.data.questions as Prisma.InputJsonValue|undefined,scoringCriteria:parsed.data.scoringCriteria as Prisma.InputJsonValue|undefined}});
+  await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'INSTRUMENT_VERSION_DRAFT_UPDATED',targetType:'INSTRUMENT_VERSION',targetId:updated.id,metadata:{instrument:updated.instrument,version:updated.version}}});
+  res.json({version:updated});
+}));
+app.post('/api/science/versions/:id/publish',authenticate,allow(UserRole.ADMIN),asyncRoute(async(req,res)=>{
+  const version=await prisma.instrumentVersion.findUnique({where:{id:req.params.id}});
+  if(!version)return res.status(404).json({error:'Versão não encontrada.'});
+  if(version.status!=='DRAFT'||version.publishedAt)return res.status(409).json({error:'Somente versões em rascunho podem ser publicadas.'});
+  const published=await prisma.$transaction(async tx=>{
+    await tx.instrumentVersion.updateMany({where:{instrument:version.instrument,status:'ACTIVE'},data:{status:'ARCHIVED'}});
+    return tx.instrumentVersion.update({where:{id:version.id},data:{status:'ACTIVE',publishedAt:new Date()}});
+  });
+  await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'INSTRUMENT_VERSION_PUBLISHED',targetType:'INSTRUMENT_VERSION',targetId:published.id,metadata:{instrument:published.instrument,version:published.version,changeSummary:published.changeSummary}}});
+  res.json({version:published,message:'Versão publicada. Novas aplicações usarão esta versão; aplicações históricas não serão recalculadas.'});
+}));
+const protocolSchema=z.object({
+ title:z.string().trim().min(3).max(180),version:z.string().trim().min(1).max(30).default('1.0'),
+ researchQuestion:z.string().trim().min(10).max(3000),hypothesis:z.string().trim().min(10).max(3000),
+ targetPopulation:z.string().trim().min(5).max(2000),inclusionCriteria:z.string().trim().min(5).max(3000),
+ exclusionCriteria:z.string().trim().min(5).max(3000),samplingStrategy:z.string().trim().min(5).max(3000),
+ sampleSizeRationale:z.string().trim().min(5).max(3000),analysisPlan:z.string().trim().min(5).max(5000),
+ ethicalConsiderations:z.string().max(5000).optional()
+}).strict();
+app.post('/api/science/protocols',authenticate,allow(UserRole.ADMIN,UserRole.ANALYST),asyncRoute(async(req,res)=>{
+ const parsed=protocolSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Protocolo incompleto.',details:parsed.error.flatten()});
+ const protocol=await prisma.studyProtocol.create({data:{...parsed.data,createdBy:req.authUser!.id}});
+ await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'RESEARCH_PROTOCOL_CREATED',targetType:'STUDY_PROTOCOL',targetId:protocol.id}});
+ res.status(201).json({protocol});
+}));
+const studySchema=z.object({
+ code:z.string().trim().regex(/^[A-Z0-9][A-Z0-9_-]{1,79}$/),title:z.string().trim().min(3).max(180),
+ description:z.string().max(3000).optional(),hypothesis:z.string().trim().min(10).max(3000),
+ targetPopulation:z.string().trim().min(5).max(2000),inclusionCriteria:z.string().trim().min(5).max(3000),
+ exclusionCriteria:z.string().max(3000).optional(),samplingPlan:z.string().trim().min(5).max(3000),
+ analysisPlan:z.string().trim().min(5).max(5000),protocolId:z.string().optional()
+}).strict();
+app.post('/api/science/studies',authenticate,allow(UserRole.ADMIN,UserRole.ANALYST),asyncRoute(async(req,res)=>{
+ const parsed=studySchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'Plano de estudo incompleto.',details:parsed.error.flatten()});
+ const study=await prisma.scientificStudy.create({data:{...parsed.data,description:parsed.data.description||null,exclusionCriteria:parsed.data.exclusionCriteria||null}});
+ await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'SCIENTIFIC_STUDY_CREATED',targetType:'SCIENTIFIC_STUDY',targetId:study.id,metadata:{code:study.code}}});
+ res.status(201).json({study});
+}));
+app.patch('/api/science/studies/:id/status',authenticate,allow(UserRole.ADMIN),asyncRoute(async(req,res)=>{
+ const parsed=z.object({status:z.enum(['DRAFT','ACTIVE','PAUSED','COMPLETED','ARCHIVED'])}).safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:'Status inválido.'});
+ const study=await prisma.scientificStudy.update({where:{id:req.params.id},data:{status:parsed.data.status}});
+ await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'SCIENTIFIC_STUDY_STATUS_CHANGED',targetType:'SCIENTIFIC_STUDY',targetId:study.id,metadata:{status:study.status}}});
+ res.json({study});
+}));
+app.post('/api/science/studies/:id/groups',authenticate,allow(UserRole.ADMIN,UserRole.ANALYST),asyncRoute(async(req,res)=>{
+ const parsed=z.object({code:z.string().trim().min(1).max(40).regex(/^[A-Z0-9_-]+$/),name:z.string().trim().min(2).max(120),arm:z.string().trim().min(2).max(80),description:z.string().max(1000).optional()}).strict().safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:'Dados do grupo inválidos.'});
+ const study=await prisma.scientificStudy.findUnique({where:{id:req.params.id}});if(!study)return res.status(404).json({error:'Estudo não encontrado.'});
+ const group=await prisma.studyGroup.create({data:{studyId:study.id,...parsed.data}});
+ await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'SCIENTIFIC_STUDY_GROUP_CREATED',targetType:'STUDY_GROUP',targetId:group.id,metadata:{studyCode:study.code,groupCode:group.code,arm:group.arm}}});
+ res.status(201).json({group});
+}));
+app.get('/api/science/studies/compare',authenticate,allow(UserRole.ADMIN,UserRole.ANALYST),asyncRoute(async(req,res)=>{
+ const codes=typeof req.query.codes==='string'?req.query.codes.split(',').map(x=>x.trim()).filter(Boolean):[];
+ if(codes.length<2||codes.length>10)return res.status(400).json({error:'Informe de 2 a 10 códigos de estudo para comparação.'});
+ const studies=await prisma.scientificStudy.findMany({where:{code:{in:codes}},include:{groups:true}});
+ if(studies.length!==new Set(codes).size)return res.status(404).json({error:'Um ou mais estudos não foram encontrados.'});
+ const results=await Promise.all(studies.map(async study=>{
+   const [cognitive,behavioral]=await Promise.all([
+     prisma.assessmentResult.findMany({where:{studyId:study.id,user:{OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]}},select:{userId:true,accuracy:true,correct:true,totalQuestions:true,axes:true,instrumentVersion:true,versionVerification:true}}),
+     prisma.instrumentAssessment.findMany({where:{studyId:study.id,consentVersion:{not:null},user:{OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]}},select:{userId:true,dimensions:true,instrumentVersion:true,versionVerification:true}})
+   ]);
+   const minimum=5;
+   const cognitiveUsers=new Set(cognitive.map(x=>x.userId)).size,behavioralUsers=new Set(behavioral.map(x=>x.userId)).size;
+   return {code:study.code,title:study.title,status:study.status,
+    cognitive:cognitiveUsers<minimum?{suppressed:true,minimumParticipants:minimum,participants:cognitiveUsers}:{suppressed:false,participants:cognitiveUsers,applications:cognitive.length,accuracy:cognitive.length?Math.round(cognitive.reduce((s,x)=>s+x.accuracy,0)/cognitive.length):null,versions:[...new Set(cognitive.map(x=>x.instrumentVersion))],legacyUnverified:cognitive.filter(x=>x.versionVerification!=='VERIFIED').length,axes:Object.entries(Object.groupBy?Object.groupBy(cognitive.flatMap(x=>x.axes as Array<any>),'axisId'):{})},
+    behavioral:behavioralUsers<minimum?{suppressed:true,minimumParticipants:minimum,participants:behavioralUsers}:{suppressed:false,participants:behavioralUsers,applications:behavioral.length,versions:[...new Set(behavioral.map(x=>x.instrumentVersion))],legacyUnverified:behavioral.filter(x=>x.versionVerification!=='VERIFIED').length,dimensions:(['decision','organization','time','humanization','psychocomportamental']).map(id=>{const vals=behavioral.flatMap(x=>(x.dimensions as Array<any>).filter(d=>d.id===id).map(d=>Number(d.score)));return{id,mean:vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):null,n:vals.length};})}
+   };
+ }));
+ res.json({minimumParticipants:5,methodology:'Comparação descritiva por estudo. Instrumentos e escalas permanecem separados. Grupos com menos de cinco participantes distintos são suprimidos. Aplicações legadas não verificadas são identificadas e não se presume equivalência entre versões.',studies:results});
 }));
 
 app.use((err: unknown,_req:Request,res:Response,_next:NextFunction) => {
