@@ -1521,3 +1521,10 @@ button:disabled {
 .science-footer{font-size:11px;color:#697990;line-height:1.6;padding:12px 2px;border-top:1px solid #e0e7ef}
 @media(max-width:900px){.science-layout{grid-template-columns:1fr}.science-hero{align-items:flex-start;flex-direction:column}}
 @media(max-width:560px){.science-compare-select{grid-template-columns:1fr}.science-tabs{overflow-x:auto;flex-wrap:nowrap}.science-tabs button{white-space:nowrap}}
+
+
+.science-study-enrollment{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0;padding:14px;border:1px solid #dfe7f0;border-radius:10px;background:#f8fafd}
+.science-study-enrollment label{display:grid;gap:6px;color:#53647b;font-size:12px;font-weight:650}
+.science-study-enrollment input,.dothp-context input{width:100%;border:1px solid #d7dfeb;border-radius:8px;padding:10px 11px;background:#fff;color:#1c2d44;font:inherit;font-size:13px}
+.science-study-enrollment small{grid-column:1/-1;color:#718096;font-size:11px}
+@media(max-width:650px){.science-study-enrollment{grid-template-columns:1fr}}
