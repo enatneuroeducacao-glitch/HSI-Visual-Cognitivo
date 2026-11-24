@@ -108,6 +108,7 @@ function App() {
   const [mode, setMode] = useState('full');
   const [studyCode,setStudyCode] = useState('');
   const [studyGroupCode,setStudyGroupCode] = useState('');
+  const [researchConsent,setResearchConsent] = useState(false);
   const [runQuestions, setRunQuestions] = useState<Question[]>([]);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
@@ -138,6 +139,7 @@ function App() {
       .getUser()
       .then(current => {
         setUser(current);
+        setResearchConsent(Boolean(current?.researchProfile?.researchConsent));
         setAuthLoading(false);
       })
       .catch(() => {
@@ -377,6 +379,7 @@ function App() {
       totalQuestions: finalAnswers.length,
       durationSeconds: totalSeconds,
       instrumentVersion: '1.0',
+      researchConsent,
       ...(studyCode.trim()?{studyCode:studyCode.trim().toUpperCase(),...(studyGroupCode.trim()?{studyGroupCode:studyGroupCode.trim().toUpperCase()}:{})}:{}),
       answerDetails: finalAnswers.map(({ questionId, axisId, selected, seconds }) => ({ questionId, axisId, selected, seconds })),
     };
@@ -566,7 +569,7 @@ function App() {
                 {consentFeedback && <small className="public-consent-feedback" role="status">{consentFeedback}</small>}
               </div>
             )}
-            <div className="science-study-enrollment"><label>Código do estudo (se você recebeu um código de pesquisa)<input value={studyCode} onChange={e=>setStudyCode(e.target.value.toUpperCase())} placeholder="Opcional · código fornecido pela equipe de pesquisa"/></label><label>Grupo de pesquisa (opcional)<input value={studyGroupCode} onChange={e=>setStudyGroupCode(e.target.value.toUpperCase())} placeholder="Código do grupo informado pelo pesquisador"/></label><small>Se não estiver participando de um estudo, deixe os campos em branco.</small></div>
+            <div className="science-study-enrollment"><label className="research-consent-choice"><input type="checkbox" checked={researchConsent} onChange={e=>setResearchConsent(e.target.checked)}/><span><strong>Autorizo o uso desta aplicação em pesquisas ENAT (opcional)</strong><small>Esta escolha não altera sua avaliação nem seu relatório individual. Pode ser retirada posteriormente. Versão do termo: ENAT-RESEARCH-1.1.</small></span></label><label>Código do estudo (se você recebeu um código de pesquisa)<input value={studyCode} onChange={e=>setStudyCode(e.target.value.toUpperCase())} placeholder="Opcional · código fornecido pela equipe de pesquisa"/></label><label>Grupo de pesquisa (opcional)<input value={studyGroupCode} onChange={e=>setStudyGroupCode(e.target.value.toUpperCase())} placeholder="Código do grupo informado pelo pesquisador"/></label><small>Se não estiver participando de um estudo, deixe os campos em branco.</small></div>
             <ResearchProfile user={user} onSaved={setUser} />
             <div className="section-heading">
               <div>
