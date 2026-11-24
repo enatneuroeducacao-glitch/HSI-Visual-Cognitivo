@@ -163,7 +163,7 @@ export default function PublicAccess({ onAuthenticated }: Props) {
               </div>
             </details>
             <div className="public-consent-block">
-              <label className="public-check"><input type="checkbox" checked={privacyAccepted} onChange={e=>setPrivacyAccepted(e.target.checked)}/><span><strong>Li o aviso de privacidade e concordo com o tratamento dos dados necessários para registrar e proteger minha participação.</strong><small>Data de nascimento, sexo, município, UF e vínculo institucional serão usados para contextualizar as aplicações. Não solicitamos identificação civil.</small></span></label>
+              <label className="public-check"><input type="checkbox" checked={privacyAccepted} onChange={e=>setPrivacyAccepted(e.target.checked)}/><span><strong>Li e estou ciente do aviso de privacidade e das informações sobre o tratamento dos dados necessários para registrar minha participação.</strong><small>Data de nascimento, sexo, município, UF e vínculo institucional serão usados para contextualizar as aplicações. Não solicitamos identificação civil.</small></span></label>
               <label className="public-check optional"><input type="checkbox" checked={researchConsent} onChange={e=>setResearchConsent(e.target.checked)}/><span><strong>Autorizo, opcionalmente, o uso das minhas respostas em pesquisas ENAT.</strong><small>As análises serão realizadas em formato agregado, com supressão de recortes com menos de cinco participantes. Posso participar dos exercícios sem marcar esta opção.</small></span></label>
             </div>
             <button className="primary full" type="submit" disabled={busy || !privacyAccepted}>{busy ? 'Registrando participação…' : 'Criar identificação e continuar'}</button>
