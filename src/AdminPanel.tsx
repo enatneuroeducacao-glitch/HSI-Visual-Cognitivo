@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from './lib/api';
-import ReportsCenter from './ReportsCenter';
 import ProfessionalReportsCenter from './ProfessionalReportsCenter';
 import ResearchCenter from './ResearchCenter';
 import AdvancedAnalytics from './AdvancedAnalytics';
