@@ -282,6 +282,16 @@ app.patch('/api/auth/research-profile', authenticate, asyncRoute(async (req, res
 
 app.get('/api/auth/me', authenticate, (req, res) => res.json({ user: publicUser(req.authUser!) }));
 
+app.patch('/api/auth/research-consent',authenticate,asyncRoute(async(req,res)=>{
+ const parsed=z.object({researchConsent:z.boolean()}).strict().safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:'Informe uma escolha válida.'});
+ const granted=parsed.data.researchConsent;
+ const user=await prisma.user.update({where:{id:req.authUser!.id},data:{researchConsentGranted:granted,researchConsentVersion:RESEARCH_CONSENT_VERSION,researchConsentedAt:granted?new Date():null}});
+ await recordConsent(user.id,granted,'ACCOUNT_PRIVACY_CENTER');
+ await prisma.auditLog.create({data:{actorId:user.id,action:granted?'RESEARCH_CONSENT_GRANTED':'RESEARCH_CONSENT_WITHDRAWN',targetType:'USER',targetId:user.id,metadata:{consentVersion:RESEARCH_CONSENT_VERSION}}});
+ res.json({user:publicUser(user as AuthUser)});
+}));
+
 app.post('/api/auth/forgot-password', asyncRoute(async (req, res) => {
   const email = z.string().email().safeParse(req.body?.email);
   if (!email.success) return res.status(400).json({ error: 'Informe um e-mail válido.' });
