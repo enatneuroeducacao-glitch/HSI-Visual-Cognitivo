@@ -3,7 +3,7 @@ import { api } from './lib/api';
 
 type Version={id:string;instrument:string;version:string;status:string;changeSummary:string;questions:any;scoringCriteria:any;publishedAt:string|null;createdAt:string};
 type Protocol={id:string;title:string;version:string;researchQuestion:string;hypothesis:string;targetPopulation:string;inclusionCriteria:string;exclusionCriteria:string;samplingStrategy:string;sampleSizeRationale:string;analysisPlan:string;ethicalConsiderations?:string|null};
-type Study={id:string;code:string;title:string;description?:string|null;status:string;protocolId?:string|null;protocol?:{id:string;title:string;version:string}|null;groups:Array<{id:string;code:string;name:string;arm:string;description?:string|null}>;_count:{cognitiveResults:number;behavioralResults:number}};
+type Study={id:string;code:string;title:string;hypothesis:string;description?:string|null;status:string;protocolId?:string|null;protocol?:{id:string;title:string;version:string}|null;groups:Array<{id:string;code:string;name:string;arm:string;description?:string|null}>;_count:{cognitiveResults:number;behavioralResults:number}};
 type Event={id:string;action:string;targetType:string;targetId:string|null;metadata:any;createdAt:string};
 const instruments=['HSI-DOTH-P','HSI Visual Cognitivo'];
 const blankProtocol={title:'',version:'1.0',researchQuestion:'',hypothesis:'',targetPopulation:'',inclusionCriteria:'',exclusionCriteria:'',samplingStrategy:'',sampleSizeRationale:'',analysisPlan:'',ethicalConsiderations:''};
