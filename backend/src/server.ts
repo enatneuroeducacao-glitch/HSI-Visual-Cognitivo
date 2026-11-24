@@ -85,7 +85,7 @@ const publicUser = (u: AuthUser) => ({
   id: u.id, name: u.publicAccess ? 'Participante público' : u.name,
   email: u.publicAccess ? null : u.email, role: u.role, status: u.status,
   participantCode: u.participantCode, groupId: u.groupId, publicAccess: Boolean(u.publicAccess),
-  researchProfile: (u.publicAccess || u.birthDate || u.sex || u.city || u.state || u.institutionType || (u as any).researchConsentGranted || u.researchConsentVersion) ? {
+  researchProfile: (u.publicAccess || u.birthDate || u.sex || u.city || u.state || u.institutionType || (u as any).researchConsentGranted || u.researchConsentVersion || (u as any).privacyNoticeVersion) ? {
     birthDate: u.birthDate ? u.birthDate.toISOString().slice(0, 10) : null,
     sex: u.sex, licenseCategory: u.licenseCategory, city: u.city, state: u.state,
     institutionType: u.institutionType, institutionName: u.institutionName, groupSector: u.groupSector, privacyNoticeVersion:(u as any).privacyNoticeVersion, privacyAcknowledgedAt:(u as any).privacyAcknowledgedAt,
