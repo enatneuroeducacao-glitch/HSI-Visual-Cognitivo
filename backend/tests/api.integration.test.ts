@@ -103,6 +103,7 @@ test('API recalcula pontuação, valida modalidade e ignora código de participa
     completedAt: new Date().toISOString(),
     totalQuestions: answers.length,
     durationSeconds: answers.length * 12,
+    researchConsent: false,
     answerDetails: answers,
   };
   const valid = await request(app).post('/api/results').set('Authorization', 'Bearer ' + token).send(payload);
@@ -148,7 +149,7 @@ test('API não entrega gabarito nem explicações no endpoint de questões', asy
 test('resultado não pode ser reenviado com o mesmo identificador', async () => {
   const { questions } = await import('../src/question-bank.js');
   const answers = questions.map((q: any) => ({ questionId: q.id, axisId: q.axis, selected: q.answer, seconds: 10 }));
-  const payload = { id: suffix + '-duplicate', mode: 'Avaliação completa', completedAt: new Date().toISOString(), totalQuestions: 30, durationSeconds: 300, studyCode:'ENAT-COG-01', answerDetails: answers };
+  const payload = { id: suffix + '-duplicate', mode: 'Avaliação completa', completedAt: new Date().toISOString(), totalQuestions: 30, durationSeconds: 300, researchConsent:false, studyCode:'ENAT-COG-01', answerDetails: answers };
   const first = await request(app).post('/api/results').set('Authorization', 'Bearer ' + tokenFor(ids.participant)).send(payload);
   assert.equal(first.status, 201);
   assert.equal(first.body.result.applicationType, 'EXPERIMENTAL');
