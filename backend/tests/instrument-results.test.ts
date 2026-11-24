@@ -11,16 +11,24 @@ const secret = process.env.JWT_SECRET!;
 const suffix = 'instrument-test-' + process.pid;
 let userId = '';
 const email = suffix + '@example.test';
+const studyCode = suffix.toUpperCase().replace(/[^A-Z0-9_-]/g,'-');
+let studyId = '';
+let studyGroupId = '';
 const token = () => jwt.sign({}, secret, { subject: userId, expiresIn: '10m', issuer: 'hsi-visual-cognitivo' });
 
 before(async () => {
   assert.ok(process.env.DATABASE_URL, 'DATABASE_URL precisa apontar para PostgreSQL de testes');
   const user = await prisma.user.create({ data: { name: 'Instrument participant', email, passwordHash: await bcrypt.hash('Test-password-2026!', 4), role: UserRole.PARTICIPANT, status: UserStatus.ACTIVE } });
   userId = user.id;
+  const study = await prisma.scientificStudy.create({data:{code:studyCode,title:'Study governance integration test',hypothesis:'A hipótese de teste verifica a associação das aplicações ao estudo.',targetPopulation:'Participantes adultos de teste',inclusionCriteria:'Conta ativa e consentimento aplicável',exclusionCriteria:'Nenhum para este teste',samplingPlan:'Amostra de conveniência para teste automatizado',analysisPlan:'Verificação de integridade referencial e versionamento',status:'ACTIVE'}});
+  studyId = study.id;
+  const group = await prisma.studyGroup.create({data:{studyId:study.id,code:'COORTE-A',name:'Coorte de teste',arm:'Comparação'}});
+  studyGroupId = group.id;
 });
 
 after(async () => {
   await prisma.user.deleteMany({ where: { id: userId } });
+  await prisma.scientificStudy.deleteMany({where:{id:studyId}});
   await prisma.$disconnect();
 });
 
@@ -90,7 +98,7 @@ test('registra dados sociodemográficos e vínculo institucional declarado sem e
   const participantData = { birthDate:'1990-04-12', sex:'F', licenseCategory:'B', city:'Joinville', state:'SC', country:'BR', institutionType:'SCHOOL', institutionName:'Escola de Pesquisa ENAT', groupSector:'Ensino médio' };
   const response = await request(app).post('/api/instrument-results')
     .set('Authorization', 'Bearer ' + token())
-    .send({ id:suffix+'-profile', instrument:'HSI-DOTH-P', context:'educacao', answers:Array(25).fill(3), studyCode:'ENAT-PILOTO-01', instrumentVersion:'1.2', participantData });
+    .send({ id:suffix+'-profile', instrument:'HSI-DOTH-P', context:'educacao', answers:Array(25).fill(3), studyCode, studyGroupCode:'COORTE-A', instrumentVersion:'1.2', participantData });
   assert.equal(response.status, 201);
   assert.equal(response.body.result.city, 'Joinville');
   assert.equal(response.body.result.state, 'SC');
@@ -100,8 +108,12 @@ test('registra dados sociodemográficos e vínculo institucional declarado sem e
   assert.equal(response.body.result.institutionName, 'Escola de Pesquisa ENAT');
   assert.equal(response.body.result.institutionId, null);
   assert.equal(response.body.result.applicationType, 'EXPERIMENTAL');
-  assert.equal(response.body.result.studyCode, 'ENAT-PILOTO-01');
-  assert.equal(response.body.result.instrumentVersion, '1.2');
+  assert.equal(response.body.result.studyCode, studyCode);
+  assert.equal(response.body.result.studyId, studyId);
+  assert.equal(response.body.result.studyGroupId, studyGroupId);
+  assert.equal(response.body.result.instrumentVersion, '1.0');
+  assert.equal(response.body.result.versionVerification, 'VERIFIED');
+  assert.ok(response.body.result.scoringSnapshot);
 });
 
 test('rejeita sexo fora de M/F e UF inválida nos dados do respondente', async () => {
