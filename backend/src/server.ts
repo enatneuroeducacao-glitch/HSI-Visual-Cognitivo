@@ -1083,6 +1083,64 @@ app.get('/api/science/audit',authenticate,allow(UserRole.ADMIN,UserRole.ANALYST)
  const rows=await prisma.auditLog.findMany({where:{targetType:{in:['INSTRUMENT_VERSION','STUDY_PROTOCOL','SCIENTIFIC_STUDY','STUDY_GROUP']}},orderBy:{createdAt:'desc'},take:150,select:{id:true,action:true,targetType:true,targetId:true,metadata:true,createdAt:true}});
  res.json({events:rows});
 }));
+
+/* LGPD governance: data subject requests, privacy controls and auditable access. */
+const privacyRequestSchema=z.object({
+ requestType:z.enum(['ACCESS','CORRECTION','ANONYMIZATION','BLOCKING','DELETION','PORTABILITY','CONSENT_WITHDRAWAL','INFORMATION']),
+ description:z.string().trim().max(2000).optional()
+}).strict();
+app.post('/api/privacy/requests',authenticate,asyncRoute(async(req,res)=>{
+ const parsed=privacyRequestSchema.safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:'Tipo de solicitação inválido.'});
+ const request=await prisma.privacyRequest.create({data:{userId:req.authUser!.id,...parsed.data}});
+ await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'DATA_SUBJECT_REQUEST_OPENED',targetType:'PRIVACY_REQUEST',targetId:request.id,metadata:{requestType:request.requestType}}});
+ res.status(201).json({request:{id:request.id,requestType:request.requestType,status:request.status,createdAt:request.createdAt}});
+}));
+app.get('/api/privacy/requests',authenticate,asyncRoute(async(req,res)=>{
+ const rows=await prisma.privacyRequest.findMany({where:{userId:req.authUser!.id},orderBy:{createdAt:'desc'},select:{id:true,requestType:true,description:true,status:true,resolutionNote:true,createdAt:true,updatedAt:true}});
+ res.json({requests:rows});
+}));
+app.get('/api/privacy/my-data',authenticate,asyncRoute(async(req,res)=>{
+ const userId=req.authUser!.id;
+ const [user,cognitive,behavioral,consents,requests]=await Promise.all([
+  prisma.user.findUnique({where:{id:userId},select:{id:true,name:true,email:true,participantCode:true,publicAccess:true,birthDate:true,sex:true,city:true,state:true,licenseCategory:true,institutionType:true,institutionName:true,groupSector:true,privacyNoticeVersion:true,privacyAcknowledgedAt:true,researchConsentVersion:true,researchConsentedAt:true,researchConsentGranted:true,createdAt:true,updatedAt:true}}),
+  prisma.assessmentResult.findMany({where:{userId},orderBy:{completedAt:'desc'}}),
+  prisma.instrumentAssessment.findMany({where:{userId},orderBy:{completedAt:'desc'}}),
+  prisma.consentEvent.findMany({where:{userId},orderBy:{createdAt:'desc'}}),
+  prisma.privacyRequest.findMany({where:{userId},orderBy:{createdAt:'desc'}})
+ ]);
+ await prisma.auditLog.create({data:{actorId:userId,action:'PERSONAL_DATA_EXPORT',targetType:'USER',targetId:userId,metadata:{cognitiveResults:cognitive.length,behavioralResults:behavioral.length}}});
+ res.json({generatedAt:new Date().toISOString(),user,cognitiveResults:cognitive,behavioralResults:behavioral,consentHistory:consents,privacyRequests:requests});
+}));
+app.get('/api/admin/privacy/requests',authenticate,allow(UserRole.ADMIN),asyncRoute(async(_req,res)=>{
+ const requests=await prisma.privacyRequest.findMany({include:{user:{select:{id:true,name:true,email:true,participantCode:true,publicAccess:true}}},orderBy:{createdAt:'asc'},take:300});
+ res.json({requests:requests.map(r=>({...r,user:{...r.user,name:r.user.publicAccess?'Participante público':r.user.name,email:r.user.publicAccess?null:r.user.email}}))});
+}));
+app.patch('/api/admin/privacy/requests/:id',authenticate,allow(UserRole.ADMIN),asyncRoute(async(req,res)=>{
+ const parsed=z.object({status:z.enum(['IN_REVIEW','WAITING_FOR_USER','COMPLETED','REJECTED'),resolutionNote:z.string().trim().max(2000).optional()}).strict().safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:'Atualização inválida.'});
+ const request=await prisma.privacyRequest.update({where:{id:String(req.params.id)},data:parsed.data});
+ await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'DATA_SUBJECT_REQUEST_UPDATED',targetType:'PRIVACY_REQUEST',targetId:request.id,metadata:{status:request.status,requestType:request.requestType}}});
+ res.json({request});
+}));
+app.get('/api/admin/audit',authenticate,allow(UserRole.ADMIN),asyncRoute(async(req,res)=>{
+ const rows=await prisma.auditLog.findMany({orderBy:{createdAt:'desc'},take:Math.min(500,Math.max(1,Number(req.query.limit)||200)),select:{id:true,actorId:true,action:true,targetType:true,targetId:true,metadata:true,createdAt:true}});
+ res.json({events:rows});
+}));
+app.get('/api/admin/retention',authenticate,allow(UserRole.ADMIN),asyncRoute(async(_req,res)=>{
+ const policies=await prisma.retentionPolicy.findMany({orderBy:{recordType:'asc'}});
+ res.json({policies});
+}));
+app.put('/api/admin/retention/:recordType',authenticate,allow(UserRole.ADMIN),asyncRoute(async(req,res)=>{
+ const parsed=z.object({retentionMonths:z.number().int().min(1).max(240),rationale:z.string().trim().min(10).max(1000),active:z.boolean().default(true)}).strict().safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:'Política de retenção inválida.'});
+ const recordType=String(req.params.recordType);
+ if(!['ACCOUNT_DATA','ASSESSMENT_RESULTS','CONSENT_EVIDENCE','AUDIT_LOGS','PRIVACY_REQUESTS','BACKUP_COPIES'].includes(recordType))return res.status(400).json({error:'Categoria de dados não reconhecida.'});
+ const policy=await prisma.retentionPolicy.upsert({where:{recordType},create:{recordType,...parsed.data,updatedBy:req.authUser!.id},update:{...parsed.data,updatedBy:req.authUser!.id}});
+ await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'RETENTION_POLICY_UPDATED',targetType:'RETENTION_POLICY',targetId:policy.id,metadata:{recordType,retentionMonths:policy.retentionMonths,active:policy.active}}});
+ res.json({policy,message:'Política registrada. A execução de descarte depende de validação jurídica e rotina operacional aprovada; nenhum dado foi excluído por esta operação.'});
+}));
+
 app.use((err: unknown,_req:Request,res:Response,_next:NextFunction) => {
   if (err && typeof err === 'object' && 'status' in err && typeof err.status === 'number') return res.status(err.status).json({error:err instanceof Error?err.message:'Solicitação inválida.'});
   if (err instanceof Error && err.message === 'INVALID_ANSWER') return res.status(400).json({error:'Resposta inválida ou questão não reconhecida.'});
