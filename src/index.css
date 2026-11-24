@@ -1569,3 +1569,37 @@ button:disabled {
 @media(max-width:720px){.science-field-grid,.science-weight-list,.science-snapshot-grid{grid-template-columns:1fr}.science-reverse-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.science-editor-heading{align-items:flex-start;flex-direction:column}}
 
 .science-option-row{grid-template-columns:100px minmax(0,1fr) auto}.science-option-remove{border:0;background:#fff0f0;color:#a13c3c;border-radius:7px;padding:7px 9px;font-size:11px}.science-option-remove:disabled{opacity:.35;cursor:not-allowed}
+
+
+/* LGPD privacy center and governance */
+.research-consent-choice{display:flex!important;align-items:flex-start;gap:10px;padding:13px 15px;border:1px solid #cbd8ed;border-radius:11px;background:#f6f8ff}
+.research-consent-choice input{width:auto!important;margin-top:3px;flex:0 0 auto}
+.research-consent-choice span{display:grid;gap:4px}
+.research-consent-choice strong{font-size:13px;color:#263d61}
+.research-consent-choice small{font-size:11px;line-height:1.5;color:#697b94}
+.privacy-center,.privacy-admin{display:grid;gap:18px;max-width:1050px;margin:0 auto;padding:22px}
+.privacy-center>header h1,.privacy-admin>header h2{margin:5px 0;color:#172b49}
+.privacy-center>header p,.privacy-admin>header p{color:#718198;line-height:1.6}
+.privacy-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.privacy-actions article,.privacy-request-form,.privacy-request-list,.privacy-admin-row,.privacy-admin-foot{padding:18px;border:1px solid #dce4ef;border-radius:13px;background:#fff}
+.privacy-actions h3,.privacy-request-form h2,.privacy-request-list h2{margin:0 0 8px;color:#1d3455}
+.privacy-actions p,.privacy-actions small{display:block;color:#687991;font-size:13px;line-height:1.55;margin:7px 0 14px}
+.privacy-consent-on,.privacy-consent-off{display:block;margin:10px 0;color:#315c48;font-size:13px}
+.privacy-consent-off{color:#8a5c32}
+.privacy-request-form{display:grid;gap:12px}
+.privacy-request-form label,.privacy-admin-controls label{display:grid;gap:6px;color:#53647b;font-size:12px;font-weight:650}
+.privacy-request-form select,.privacy-request-form textarea,.privacy-admin-controls select,.privacy-admin-controls textarea{width:100%;border:1px solid #d7dfeb;border-radius:8px;padding:10px;background:#fff;color:#24364f;font:inherit}
+.privacy-request-list{display:grid;gap:10px}
+.privacy-request-list>article{display:grid;gap:7px;padding:12px;border:1px solid #e3e9f1;border-radius:9px}
+.privacy-request-list>article>div{display:flex;justify-content:space-between;gap:12px}
+.privacy-request-list>article span,.privacy-request-list>article p,.privacy-request-list>article small{font-size:12px;color:#718198}
+.privacy-request-list>article strong{font-size:12px;color:#315c48}
+.privacy-legal-footnote{font-size:11px;color:#8290a3;line-height:1.6}
+.privacy-admin-summary{display:flex;align-items:center;gap:10px;padding:14px;border-radius:10px;background:#f3f6fb}
+.privacy-admin-summary>b{font-size:24px;color:#1e3658}.privacy-admin-summary span{flex:1;color:#63748b;font-size:12px}
+.privacy-admin-row{display:grid;gap:12px}
+.privacy-admin-person{display:grid;gap:4px}.privacy-admin-person span,.privacy-admin-person small{color:#6e7e94;font-size:12px}
+.privacy-admin-row>p{margin:0;padding:10px;background:#f7f9fc;border-radius:8px;color:#586a82;font-size:12px}
+.privacy-admin-controls{display:grid;grid-template-columns:200px minmax(0,1fr) auto;gap:10px;align-items:end}
+.privacy-admin-foot p{font-size:12px;color:#687991;line-height:1.5}
+@media(max-width:760px){.privacy-actions{grid-template-columns:1fr}.privacy-admin-controls{grid-template-columns:1fr}.privacy-center,.privacy-admin{padding:12px}}

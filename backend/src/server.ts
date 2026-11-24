@@ -55,13 +55,14 @@ app.use(cors({ origin(origin, cb) { if (!origin || allowedOrigins.includes(origi
 app.use(express.json({ limit: '1mb' }));
 app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false }));
 app.use('/api/public', rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, standardHeaders: 'draft-7', legacyHeaders: false }));
+app.use('/api/privacy', rateLimit({ windowMs: 60 * 60 * 1000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false }));
 
 type AuthUser = {
   id: string; name: string; email: string; role: UserRole; status: UserStatus;
   participantCode: string | null; groupId: string | null; publicAccess?: boolean;
   birthDate?: Date | null; sex?: string | null; city?: string | null; state?: string | null;
   licenseCategory?: string | null; institutionType?: string | null; institutionName?: string | null;
-  groupSector?: string | null; researchConsentVersion?: string | null; researchConsentedAt?: Date | null;
+  groupSector?: string | null; privacyNoticeVersion?: string | null; privacyAcknowledgedAt?: Date | null; researchConsentVersion?: string | null; researchConsentedAt?: Date | null;
 };
 declare global { namespace Express { interface Request { authUser?: AuthUser } } }
 
@@ -75,15 +76,20 @@ async function withSerializableRetry<T>(work: () => Promise<T>): Promise<T> {
   }
   throw new Error('Não foi possível reservar a sequência da avaliação.');
 }
+const PRIVACY_NOTICE_VERSION='ENAT-PRIVACY-1.1';
+const RESEARCH_CONSENT_VERSION='ENAT-RESEARCH-1.1';
+async function recordConsent(userId:string,granted:boolean,source:string,extra:{instrument?:string;assessmentId?:string;privacyNoticeVersion?:string}={}) {
+ await prisma.consentEvent.create({data:{userId,purpose:'RESEARCH_USE',granted,consentVersion:RESEARCH_CONSENT_VERSION,privacyNoticeVersion:extra.privacyNoticeVersion||PRIVACY_NOTICE_VERSION,instrument:extra.instrument||null,assessmentId:extra.assessmentId||null,source}});
+}
 const publicUser = (u: AuthUser) => ({
   id: u.id, name: u.publicAccess ? 'Participante público' : u.name,
   email: u.publicAccess ? null : u.email, role: u.role, status: u.status,
   participantCode: u.participantCode, groupId: u.groupId, publicAccess: Boolean(u.publicAccess),
-  researchProfile: (u.publicAccess || u.birthDate || u.sex || u.city || u.state || u.institutionType) ? {
+  researchProfile: (u.publicAccess || u.birthDate || u.sex || u.city || u.state || u.institutionType || (u as any).researchConsentGranted || u.researchConsentVersion || (u as any).privacyNoticeVersion) ? {
     birthDate: u.birthDate ? u.birthDate.toISOString().slice(0, 10) : null,
     sex: u.sex, licenseCategory: u.licenseCategory, city: u.city, state: u.state,
-    institutionType: u.institutionType, institutionName: u.institutionName, groupSector: u.groupSector,
-    researchConsent: Boolean(u.researchConsentedAt), researchConsentVersion: u.researchConsentVersion
+    institutionType: u.institutionType, institutionName: u.institutionName, groupSector: u.groupSector, privacyNoticeVersion:(u as any).privacyNoticeVersion, privacyAcknowledgedAt:(u as any).privacyAcknowledgedAt,
+    researchConsent: Boolean((u as any).researchConsentGranted), researchConsentVersion: u.researchConsentVersion
   } : null
 });
 
@@ -160,8 +166,8 @@ const publicParticipantSchema = z.object({
   institutionType: z.enum(['INDEPENDENT','SCHOOL','COMPANY','PUBLIC_AGENCY','UNIVERSITY','RESEARCH_CENTER','COMMUNITY','OTHER']),
   institutionName: z.string().trim().max(180).nullable().optional(),
   groupSector: z.string().trim().max(120).nullable().optional(),
-  privacyNoticeVersion: z.literal('ENAT-PRIVACY-1.0'),
-  researchConsent: z.boolean().default(false)
+  privacyNoticeVersion: z.literal(PRIVACY_NOTICE_VERSION),
+  researchConsent: z.boolean()
 }).strict();
 
 function publicSessionToken(userId: string) {
@@ -188,9 +194,11 @@ app.post('/api/public/participants', asyncRoute(async (req, res) => {
     licenseCategory: data.licenseCategory || null, institutionType: data.institutionType,
     institutionName: data.institutionName?.trim() || null, groupSector: data.groupSector?.trim() || null,
     privacyNoticeVersion: data.privacyNoticeVersion, privacyAcknowledgedAt: new Date(),
-    researchConsentVersion: data.researchConsent ? 'ENAT-RESEARCH-1.0' : null,
-    researchConsentedAt: data.researchConsent ? new Date() : null
+    researchConsentVersion: RESEARCH_CONSENT_VERSION,
+    researchConsentedAt: data.researchConsent ? new Date() : null,
+    researchConsentGranted: data.researchConsent
   }});
+  await recordConsent(user.id,data.researchConsent,'PUBLIC_REGISTRATION',{privacyNoticeVersion:data.privacyNoticeVersion});
   await prisma.auditLog.create({ data: {
     actorId: user.id, action: 'PUBLIC_PARTICIPANT_CREATE', targetType: 'USER', targetId: user.id,
     metadata: { publicAccess: true, researchConsent: data.researchConsent, privacyNoticeVersion: data.privacyNoticeVersion }
@@ -210,16 +218,18 @@ app.post('/api/public/session', asyncRoute(async (req, res) => {
 
 app.patch('/api/public/research-consent', authenticate, asyncRoute(async (req, res) => {
   if (!req.authUser!.publicAccess) return res.status(403).json({ error: 'Esta operação está disponível somente para participantes públicos.' });
-  const parsed = z.object({ researchConsent: z.boolean() }).safeParse(req.body);
+  const parsed = z.object({ researchConsent: z.boolean() }).strict().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Informe uma opção válida de consentimento.' });
   const enabled = parsed.data.researchConsent;
   const user = await prisma.user.update({
     where: { id: req.authUser!.id },
     data: {
-      researchConsentVersion: enabled ? 'ENAT-RESEARCH-1.0' : null,
-      researchConsentedAt: enabled ? new Date() : null
+      researchConsentVersion: RESEARCH_CONSENT_VERSION,
+      researchConsentedAt: enabled ? new Date() : null,
+      researchConsentGranted: enabled
     }
   });
+  await recordConsent(user.id,enabled,'PARTICIPANT_PREFERENCE');
   await prisma.auditLog.create({ data: {
     actorId: user.id, action: enabled ? 'PUBLIC_RESEARCH_CONSENT_GRANTED' : 'PUBLIC_RESEARCH_CONSENT_WITHDRAWN',
     targetType: 'USER', targetId: user.id, metadata: { researchConsent: enabled }
@@ -236,8 +246,8 @@ const researchProfileSchema = z.object({
   institutionType: z.enum(['INDEPENDENT','SCHOOL','COMPANY','PUBLIC_AGENCY','UNIVERSITY','RESEARCH_CENTER','COMMUNITY','OTHER']),
   institutionName: z.string().trim().max(180).nullable().optional(),
   groupSector: z.string().trim().max(120).nullable().optional(),
-  privacyNoticeVersion: z.literal('ENAT-PRIVACY-1.0'),
-  researchConsent: z.boolean().default(false)
+  privacyNoticeVersion: z.literal(PRIVACY_NOTICE_VERSION),
+  researchConsent: z.boolean()
 }).strict();
 
 app.patch('/api/auth/research-profile', authenticate, asyncRoute(async (req, res) => {
@@ -258,10 +268,12 @@ app.patch('/api/auth/research-profile', authenticate, asyncRoute(async (req, res
       licenseCategory: data.licenseCategory || null, institutionType: data.institutionType,
       institutionName: data.institutionName?.trim() || null, groupSector: data.groupSector?.trim() || null,
       privacyNoticeVersion: data.privacyNoticeVersion, privacyAcknowledgedAt: new Date(),
-      researchConsentVersion: data.researchConsent ? 'ENAT-RESEARCH-1.0' : null,
-      researchConsentedAt: data.researchConsent ? new Date() : null
+      researchConsentVersion: RESEARCH_CONSENT_VERSION,
+      researchConsentedAt: data.researchConsent ? new Date() : null,
+      researchConsentGranted: data.researchConsent
     }
   });
+  await recordConsent(user.id,data.researchConsent,'RESEARCH_PROFILE_UPDATE',{privacyNoticeVersion:data.privacyNoticeVersion});
   await prisma.auditLog.create({ data: {
     actorId: user.id, action: 'RESEARCH_PROFILE_UPDATED', targetType: 'USER', targetId: user.id,
     metadata: { researchConsent: data.researchConsent, privacyNoticeVersion: data.privacyNoticeVersion }
@@ -270,6 +282,16 @@ app.patch('/api/auth/research-profile', authenticate, asyncRoute(async (req, res
 }));
 
 app.get('/api/auth/me', authenticate, (req, res) => res.json({ user: publicUser(req.authUser!) }));
+
+app.patch('/api/auth/research-consent',authenticate,asyncRoute(async(req,res)=>{
+ const parsed=z.object({researchConsent:z.boolean()}).strict().safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:'Informe uma escolha válida.'});
+ const granted=parsed.data.researchConsent;
+ const user=await prisma.user.update({where:{id:req.authUser!.id},data:{researchConsentGranted:granted,researchConsentVersion:RESEARCH_CONSENT_VERSION,researchConsentedAt:granted?new Date():null}});
+ await recordConsent(user.id,granted,'ACCOUNT_PRIVACY_CENTER');
+ await prisma.auditLog.create({data:{actorId:user.id,action:granted?'RESEARCH_CONSENT_GRANTED':'RESEARCH_CONSENT_WITHDRAWN',targetType:'USER',targetId:user.id,metadata:{consentVersion:RESEARCH_CONSENT_VERSION}}});
+ res.json({user:publicUser(user as AuthUser)});
+}));
 
 app.post('/api/auth/forgot-password', asyncRoute(async (req, res) => {
   const email = z.string().email().safeParse(req.body?.email);
@@ -409,6 +431,7 @@ const resultSchema = z.object({
   id:z.string().min(8).max(100), mode:z.enum(['Avaliação completa','Eixo individual']),
   completedAt:z.string().datetime(), totalQuestions:z.number().int().min(1).max(30),
   durationSeconds:z.number().int().min(1).max(86400),
+  researchConsent:z.boolean(),
   studyCode:z.string().trim().min(2).max(80).optional(),
   studyGroupCode:z.string().trim().min(1).max(40).optional(),
   instrumentVersion:z.string().trim().min(1).max(20).default('1.0'),
@@ -465,8 +488,10 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
       applicationNumber,applicationType:studyCode?'EXPERIMENTAL':applicationNumber===1?'BASELINE':'REEVALUATION',
       studyCode,instrumentVersion:activeVersion.version,instrumentVersionId:activeVersion.id,
       scoringSnapshot:activeVersion.scoringCriteria as Prisma.InputJsonValue,versionVerification:'VERIFIED',
+      researchConsentGranted:d.researchConsent,researchConsentVersion:RESEARCH_CONSENT_VERSION,researchConsentedAt:d.researchConsent?new Date():null,
       studyId:study?.id||null,studyGroupId:studyGroup?.id||null
     }});
+    await tx.consentEvent.create({data:{userId:req.authUser!.id,purpose:'RESEARCH_USE',granted:d.researchConsent,consentVersion:RESEARCH_CONSENT_VERSION,instrument:'HSI Visual Cognitivo',assessmentId:created.id,source:'ASSESSMENT_SUBMISSION'}});
     await tx.auditLog.create({data:{actorId:req.authUser!.id,action:'ASSESSMENT_SUBMIT',targetType:'RESULT',targetId:created.id,metadata:{applicationNumber,applicationType:created.applicationType,studyCode}}});
     return created;
   }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable}));
@@ -483,7 +508,7 @@ const instrumentResultSchema = z.object({
   instrumentVersion: z.string().trim().min(1).max(20).default('1.0'),
   studyCode: z.string().trim().min(2).max(80).optional(),
   studyGroupCode: z.string().trim().min(1).max(40).optional(),
-  consentVersion: z.string().max(40).optional(),
+  researchConsent: z.boolean(),
   participantData: z.object({
     birthDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     sex:z.enum(['M','F']),
@@ -580,13 +605,15 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
       institutionType: profile?.institutionType || null,
       institutionName: profile?.institutionName || null,
       groupSector: profile?.groupSector || null,
-      consentVersion: data.consentVersion || null,
-      consentedAt: data.consentVersion ? new Date() : null,
+      consentVersion: RESEARCH_CONSENT_VERSION,
+      consentedAt: data.researchConsent ? new Date() : null,
+      researchConsentGranted: data.researchConsent,
       completedAt: new Date(),
       answers: scored.answers as Prisma.InputJsonValue,
       dimensions: scored.dimensions as Prisma.InputJsonValue,
     },
     });
+    await tx.consentEvent.create({data:{userId:req.authUser!.id,purpose:'RESEARCH_USE',granted:data.researchConsent,consentVersion:RESEARCH_CONSENT_VERSION,instrument:'HSI-DOTH-P',assessmentId:created.id,source:'ASSESSMENT_SUBMISSION'}});
     await tx.auditLog.create({ data: { actorId: req.authUser!.id, action: 'INSTRUMENT_SUBMIT', targetType: 'INSTRUMENT_RESULT', targetId: created.id, metadata: { instrument: data.instrument, context: data.context, applicationNumber, applicationType:created.applicationType, studyCode } } });
     return created;
   }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable}));
@@ -598,10 +625,7 @@ app.get('/api/analytics', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), 
   const to = typeof req.query.to === 'string' ? new Date(req.query.to) : new Date();
   const groupId = typeof req.query.groupId === 'string' ? req.query.groupId : undefined;
   if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from > to) return res.status(400).json({error:'Período inválido.'});
-  const where = {
-    completedAt:{gte:from,lte:to},
-    user:{ ...(groupId ? {groupId} : {}), OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}] }
-  };
+  const where = { completedAt:{gte:from,lte:to}, researchConsentGranted:true, user:{ ...(groupId ? {groupId} : {}) } };
   const rows=await prisma.assessmentResult.findMany({where,select:{userId:true,mode:true,totalQuestions:true,correct:true,durationSeconds:true,axes:true,answerDetails:true,completedAt:true}});
   const totalQuestions=rows.reduce((sum,row)=>sum+row.totalQuestions,0);
   const correct=rows.reduce((sum,row)=>sum+row.correct,0);
@@ -639,11 +663,11 @@ app.get('/api/admin/behavior', authenticate, allow(UserRole.ADMIN,UserRole.ANALY
   const to=typeof req.query.to==='string'?new Date(req.query.to):new Date();
   const groupId=typeof req.query.groupId==='string'?req.query.groupId:undefined;
   if(!Number.isFinite(from.getTime())||!Number.isFinite(to.getTime())||from>to)return res.status(400).json({error:'Período inválido.'});
-  const userFilter={...(groupId?{groupId}:{}),OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]};
-  const where={completedAt:{gte:from,lte:to},user:userFilter};
+  const userFilter={...(groupId?{groupId}:{})};
+  const where={completedAt:{gte:from,lte:to},researchConsentGranted:true,user:userFilter};
   const [cognitive,instruments]=await Promise.all([
     prisma.assessmentResult.findMany({where,select:{userId:true,totalQuestions:true,correct:true,axes:true,answerDetails:true,completedAt:true}}),
-    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:userFilter},select:{userId:true,context:true,dimensions:true,answers:true,completedAt:true}})
+    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},researchConsentGranted:true,user:userFilter},select:{userId:true,context:true,dimensions:true,answers:true,completedAt:true}})
   ]);
   const minimumGroupSize=5;
   const cognitiveParticipants=new Set(cognitive.map(row=>row.userId)).size;
@@ -686,8 +710,8 @@ app.get('/api/admin/national-analytics', authenticate, allow(UserRole.ADMIN,User
   const minimumGroupSize = 5;
   const userFilter = {OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]};
   const [cognitiveRows,behavioralRows] = await Promise.all([
-    prisma.assessmentResult.findMany({where:{completedAt:{gte:from,lte:to},user:userFilter},select:{userId:true,completedAt:true,totalQuestions:true,correct:true,axes:true,answerDetails:true,user:{select:{city:true,state:true,institutionName:true,institutionType:true}}}}),
-    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:userFilter},select:{userId:true,completedAt:true,context:true,dimensions:true,answers:true,city:true,state:true,institutionName:true,institutionType:true,institution:{select:{name:true,type:true,city:true,state:true}}}})
+    prisma.assessmentResult.findMany({where:{completedAt:{gte:from,lte:to},researchConsentGranted:true,user:userFilter},select:{userId:true,completedAt:true,totalQuestions:true,correct:true,axes:true,answerDetails:true,user:{select:{city:true,state:true,institutionName:true,institutionType:true}}}}),
+    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},researchConsentGranted:true,user:userFilter},select:{userId:true,completedAt:true,context:true,dimensions:true,answers:true,city:true,state:true,institutionName:true,institutionType:true,institution:{select:{name:true,type:true,city:true,state:true}}}})
   ]);
   const build = (rows:any[], kind:'cognitive'|'behavioral') => {
     const users = new Set(rows.map(row=>row.userId));
@@ -800,7 +824,7 @@ async function getResearchAggregate(query:Record<string,unknown>){
   const to=parsed.data.to?new Date(parsed.data.to):new Date();
   if(from>to)throw Object.assign(new Error('Período inválido.'),{status:400});
   const rows=await prisma.instrumentAssessment.findMany({
-    where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:{OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]},...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
+    where:{completedAt:{gte:from,lte:to},researchConsentGranted:true,...(parsed.data.institutionId?{institutionId:parsed.data.institutionId}:{}),...(parsed.data.context?{context:parsed.data.context}:{})},
     select:{userId:true,institutionId:true,city:true,state:true,context:true,dimensions:true,institutionType:true,institutionName:true,groupSector:true,institution:{select:{name:true,type:true,city:true,state:true}},completedAt:true}
   });
   const participants=new Set(rows.map(x=>x.userId)).size;
@@ -867,6 +891,7 @@ app.get('/api/research/aggregate', authenticate, allow(UserRole.ADMIN,UserRole.A
 app.get('/api/research/export.csv', authenticate, allow(UserRole.ADMIN,UserRole.ANALYST), asyncRoute(async (req,res)=>{
   const aggregate=await getResearchAggregate(req.query as Record<string,unknown>);
   if(aggregate.privacy.suppressed)return res.status(403).json({error:'Exportação suprimida: são necessários pelo menos cinco participantes distintos.',privacy:aggregate.privacy});
+  await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'AGGREGATE_RESEARCH_EXPORT',targetType:'RESEARCH_EXPORT',metadata:{participants:aggregate.totals.participants,applications:aggregate.totals.assessments,format:'CSV'}}});
   const rows:string[][]=[['tipo','codigo','dimensao','pontuacao_media','aplicacoes','participantes']];
   for(const d of aggregate.dimensions)rows.push(['geral','TODOS',d.name,String(d.score),String(d.applications),String(aggregate.totals.participants)]);
   for(const g of aggregate.geography)for(const d of g.dimensions)rows.push(['municipio',g.state+'-'+g.city,d.dimensionId,String(d.score),String(g.count),String(g.participants)]);
@@ -901,10 +926,9 @@ app.get('/api/admin/data-quality', authenticate, allow(UserRole.ADMIN,UserRole.A
   const from=typeof req.query.from==='string'?new Date(req.query.from):new Date(Date.now()-365*86400000);
   const to=typeof req.query.to==='string'?new Date(req.query.to):new Date();
   if(!Number.isFinite(from.getTime())||!Number.isFinite(to.getTime())||from>to)return res.status(400).json({error:'Período inválido.'});
-  const userFilter={OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]};
   const [cognitive,behavioral]=await Promise.all([
-    prisma.assessmentResult.findMany({where:{completedAt:{gte:from,lte:to},user:userFilter},select:{userId:true,durationSeconds:true,totalQuestions:true,answerDetails:true,completedAt:true,instrumentVersion:true,mode:true,accuracy:true}}),
-    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},consentVersion:{not:null},user:userFilter},select:{userId:true,answers:true,dimensions:true,completedAt:true,context:true,contextVersion:true,instrumentVersion:true,state:true,city:true,institutionType:true}})
+    prisma.assessmentResult.findMany({where:{completedAt:{gte:from,lte:to},researchConsentGranted:true},select:{userId:true,durationSeconds:true,totalQuestions:true,answerDetails:true,completedAt:true,instrumentVersion:true,mode:true,accuracy:true}}),
+    prisma.instrumentAssessment.findMany({where:{completedAt:{gte:from,lte:to},researchConsentGranted:true},select:{userId:true,answers:true,dimensions:true,completedAt:true,context:true,contextVersion:true,instrumentVersion:true,state:true,city:true,institutionType:true}})
   ]);
   res.json(analyzeDataQuality(cognitive,behavioral,5));
 }));
@@ -1054,8 +1078,8 @@ app.get('/api/science/studies/compare',authenticate,allow(UserRole.ADMIN,UserRol
  if(studies.length!==new Set(codes).size)return res.status(404).json({error:'Um ou mais estudos não foram encontrados.'});
  const results=await Promise.all(studies.map(async study=>{
    const [cognitive,behavioral]=await Promise.all([
-     prisma.assessmentResult.findMany({where:{studyId:study.id,user:{OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]}},select:{userId:true,accuracy:true,correct:true,totalQuestions:true,axes:true,instrumentVersion:true,versionVerification:true}}),
-     prisma.instrumentAssessment.findMany({where:{studyId:study.id,consentVersion:{not:null},user:{OR:[{publicAccess:false},{publicAccess:true,researchConsentedAt:{not:null}}]}},select:{userId:true,dimensions:true,instrumentVersion:true,versionVerification:true}})
+     prisma.assessmentResult.findMany({where:{studyId:study.id,researchConsentGranted:true},select:{userId:true,accuracy:true,correct:true,totalQuestions:true,axes:true,instrumentVersion:true,versionVerification:true}}),
+     prisma.instrumentAssessment.findMany({where:{studyId:study.id,researchConsentGranted:true},select:{userId:true,dimensions:true,instrumentVersion:true,versionVerification:true}})
    ]);
    const minimum=5;
    const cognitiveUsers=new Set(cognitive.map(x=>x.userId)).size,behavioralUsers=new Set(behavioral.map(x=>x.userId)).size;
@@ -1071,6 +1095,64 @@ app.get('/api/science/audit',authenticate,allow(UserRole.ADMIN,UserRole.ANALYST)
  const rows=await prisma.auditLog.findMany({where:{targetType:{in:['INSTRUMENT_VERSION','STUDY_PROTOCOL','SCIENTIFIC_STUDY','STUDY_GROUP']}},orderBy:{createdAt:'desc'},take:150,select:{id:true,action:true,targetType:true,targetId:true,metadata:true,createdAt:true}});
  res.json({events:rows});
 }));
+
+/* LGPD governance: data subject requests, privacy controls and auditable access. */
+const privacyRequestSchema=z.object({
+ requestType:z.enum(['ACCESS','CORRECTION','ANONYMIZATION','BLOCKING','DELETION','PORTABILITY','CONSENT_WITHDRAWAL','INFORMATION']),
+ description:z.string().trim().max(2000).optional()
+}).strict();
+app.post('/api/privacy/requests',authenticate,asyncRoute(async(req,res)=>{
+ const parsed=privacyRequestSchema.safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:'Tipo de solicitação inválido.'});
+ const request=await prisma.privacyRequest.create({data:{userId:req.authUser!.id,...parsed.data}});
+ await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'DATA_SUBJECT_REQUEST_OPENED',targetType:'PRIVACY_REQUEST',targetId:request.id,metadata:{requestType:request.requestType}}});
+ res.status(201).json({request:{id:request.id,requestType:request.requestType,status:request.status,createdAt:request.createdAt}});
+}));
+app.get('/api/privacy/requests',authenticate,asyncRoute(async(req,res)=>{
+ const rows=await prisma.privacyRequest.findMany({where:{userId:req.authUser!.id},orderBy:{createdAt:'desc'},select:{id:true,requestType:true,description:true,status:true,resolutionNote:true,createdAt:true,updatedAt:true}});
+ res.json({requests:rows});
+}));
+app.get('/api/privacy/my-data',authenticate,asyncRoute(async(req,res)=>{
+ const userId=req.authUser!.id;
+ const [user,cognitive,behavioral,consents,requests]=await Promise.all([
+  prisma.user.findUnique({where:{id:userId},select:{id:true,name:true,email:true,participantCode:true,publicAccess:true,birthDate:true,sex:true,city:true,state:true,licenseCategory:true,institutionType:true,institutionName:true,groupSector:true,privacyNoticeVersion:true,privacyAcknowledgedAt:true,researchConsentVersion:true,researchConsentedAt:true,researchConsentGranted:true,createdAt:true,updatedAt:true}}),
+  prisma.assessmentResult.findMany({where:{userId},orderBy:{completedAt:'desc'}}),
+  prisma.instrumentAssessment.findMany({where:{userId},orderBy:{completedAt:'desc'}}),
+  prisma.consentEvent.findMany({where:{userId},orderBy:{createdAt:'desc'}}),
+  prisma.privacyRequest.findMany({where:{userId},orderBy:{createdAt:'desc'}})
+ ]);
+ await prisma.auditLog.create({data:{actorId:userId,action:'PERSONAL_DATA_EXPORT',targetType:'USER',targetId:userId,metadata:{cognitiveResults:cognitive.length,behavioralResults:behavioral.length}}});
+ res.json({generatedAt:new Date().toISOString(),user,cognitiveResults:cognitive,behavioralResults:behavioral,consentHistory:consents,privacyRequests:requests});
+}));
+app.get('/api/admin/privacy/requests',authenticate,allow(UserRole.ADMIN),asyncRoute(async(_req,res)=>{
+ const requests=await prisma.privacyRequest.findMany({include:{user:{select:{id:true,name:true,email:true,participantCode:true,publicAccess:true}}},orderBy:{createdAt:'asc'},take:300});
+ res.json({requests:requests.map(r=>({...r,user:{...r.user,name:r.user.publicAccess?'Participante público':r.user.name,email:r.user.publicAccess?null:r.user.email}}))});
+}));
+app.patch('/api/admin/privacy/requests/:id',authenticate,allow(UserRole.ADMIN),asyncRoute(async(req,res)=>{
+ const parsed=z.object({status:z.enum(['IN_REVIEW','WAITING_FOR_USER','COMPLETED','REJECTED']),resolutionNote:z.string().trim().max(2000).optional()}).strict().safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:'Atualização inválida.'});
+ const request=await prisma.privacyRequest.update({where:{id:String(req.params.id)},data:parsed.data});
+ await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'DATA_SUBJECT_REQUEST_UPDATED',targetType:'PRIVACY_REQUEST',targetId:request.id,metadata:{status:request.status,requestType:request.requestType}}});
+ res.json({request});
+}));
+app.get('/api/admin/audit',authenticate,allow(UserRole.ADMIN),asyncRoute(async(req,res)=>{
+ const rows=await prisma.auditLog.findMany({orderBy:{createdAt:'desc'},take:Math.min(500,Math.max(1,Number(req.query.limit)||200)),select:{id:true,actorId:true,action:true,targetType:true,targetId:true,metadata:true,createdAt:true}});
+ res.json({events:rows});
+}));
+app.get('/api/admin/retention',authenticate,allow(UserRole.ADMIN),asyncRoute(async(_req,res)=>{
+ const policies=await prisma.retentionPolicy.findMany({orderBy:{recordType:'asc'}});
+ res.json({policies});
+}));
+app.put('/api/admin/retention/:recordType',authenticate,allow(UserRole.ADMIN),asyncRoute(async(req,res)=>{
+ const parsed=z.object({retentionMonths:z.number().int().min(1).max(240),rationale:z.string().trim().min(10).max(1000),active:z.boolean().default(true)}).strict().safeParse(req.body);
+ if(!parsed.success)return res.status(400).json({error:'Política de retenção inválida.'});
+ const recordType=String(req.params.recordType);
+ if(!['ACCOUNT_DATA','ASSESSMENT_RESULTS','CONSENT_EVIDENCE','AUDIT_LOGS','PRIVACY_REQUESTS','BACKUP_COPIES'].includes(recordType))return res.status(400).json({error:'Categoria de dados não reconhecida.'});
+ const policy=await prisma.retentionPolicy.upsert({where:{recordType},create:{recordType,...parsed.data,updatedBy:req.authUser!.id},update:{...parsed.data,updatedBy:req.authUser!.id}});
+ await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'RETENTION_POLICY_UPDATED',targetType:'RETENTION_POLICY',targetId:policy.id,metadata:{recordType,retentionMonths:policy.retentionMonths,active:policy.active}}});
+ res.json({policy,message:'Política registrada. A execução de descarte depende de validação jurídica e rotina operacional aprovada; nenhum dado foi excluído por esta operação.'});
+}));
+
 app.use((err: unknown,_req:Request,res:Response,_next:NextFunction) => {
   if (err && typeof err === 'object' && 'status' in err && typeof err.status === 'number') return res.status(err.status).json({error:err instanceof Error?err.message:'Solicitação inválida.'});
   if (err instanceof Error && err.message === 'INVALID_ANSWER') return res.status(400).json({error:'Resposta inválida ou questão não reconhecida.'});

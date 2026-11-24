@@ -5,6 +5,7 @@ import DothpAssessment from './DothpAssessment';
 import InstrumentHistory from './InstrumentHistory';
 import PublicAccess from './PublicAccess';
 import ResearchProfile from './ResearchProfile';
+import PrivacyCenter from './PrivacyCenter';
 import { exportReportCsv, exportReportExcel } from './report-export';
 
 const logoUrl = new URL('../assets/hsi-visual-cognitivo.webp', import.meta.url).href;
@@ -108,6 +109,7 @@ function App() {
   const [mode, setMode] = useState('full');
   const [studyCode,setStudyCode] = useState('');
   const [studyGroupCode,setStudyGroupCode] = useState('');
+  const [researchConsent,setResearchConsent] = useState(false);
   const [runQuestions, setRunQuestions] = useState<Question[]>([]);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
@@ -138,6 +140,7 @@ function App() {
       .getUser()
       .then(current => {
         setUser(current);
+        setResearchConsent(Boolean(current?.researchProfile?.researchConsent));
         setAuthLoading(false);
       })
       .catch(() => {
@@ -341,8 +344,8 @@ function App() {
 
   const startTest = async (axisId?: string) => {
     const profile = user?.researchProfile;
-    if (!profile?.birthDate || !profile?.sex || !profile?.city || !profile?.state || !profile?.institutionType) {
-      setSaveError('Antes de iniciar os exercícios, complete o cadastro de pesquisa do respondente.');
+    if (!profile?.birthDate || !profile?.sex || !profile?.city || !profile?.state || !profile?.institutionType || profile?.privacyNoticeVersion !== 'ENAT-PRIVACY-1.1') {
+      setSaveError('Antes de iniciar os exercícios, complete o cadastro e confirme a leitura do aviso de privacidade atualizado.');
       setView('home');
       return;
     }
@@ -377,6 +380,7 @@ function App() {
       totalQuestions: finalAnswers.length,
       durationSeconds: totalSeconds,
       instrumentVersion: '1.0',
+      researchConsent,
       ...(studyCode.trim()?{studyCode:studyCode.trim().toUpperCase(),...(studyGroupCode.trim()?{studyGroupCode:studyGroupCode.trim().toUpperCase()}:{})}:{}),
       answerDetails: finalAnswers.map(({ questionId, axisId, selected, seconds }) => ({ questionId, axisId, selected, seconds })),
     };
@@ -466,8 +470,14 @@ function App() {
         >
           ⌂ <span>Painel inicial</span>
         </button>
-        <button className={view === 'dothp' ? 'nav-item active' : 'nav-item'} onClick={() => { if (!user?.researchProfile?.birthDate) { setSaveError('Complete primeiro o cadastro de pesquisa no painel inicial.'); setView('home'); return; } setView('dothp'); }}>
+        <button className={view === 'dothp' ? 'nav-item active' : 'nav-item'} onClick={() => { if (!user?.researchProfile?.birthDate || user?.researchProfile?.privacyNoticeVersion !== 'ENAT-PRIVACY-1.1') { setSaveError('Complete o cadastro e confirme o aviso de privacidade atualizado no painel inicial.'); setView('home'); return; } setView('dothp'); }}>
           ◉ <span>HSI-DOTH-P comportamental</span>
+        </button>
+        <button
+          className={view === 'privacy' ? 'nav-item active' : 'nav-item'}
+          onClick={() => setView('privacy')}
+        >
+          ◈ <span>Privacidade e meus dados</span>
         </button>
         <button
           className={view === 'history' ? 'nav-item active' : 'nav-item'}
@@ -524,6 +534,7 @@ function App() {
           </div>
         </header>
 
+        {view === 'privacy' && <main className="main-content"><PrivacyCenter user={user} onUserChange={(next)=>{setUser(next);setResearchConsent(Boolean(next?.researchProfile?.researchConsent));}} /></main>}
         {view === 'admin' && (user.role === 'ADMIN' || user.role === 'ANALYST') && <AdminPanel role={user.role} />}
         {view === 'dothp' && <DothpAssessment participantData={user.researchProfile} />}
 
@@ -566,7 +577,7 @@ function App() {
                 {consentFeedback && <small className="public-consent-feedback" role="status">{consentFeedback}</small>}
               </div>
             )}
-            <div className="science-study-enrollment"><label>Código do estudo (se você recebeu um código de pesquisa)<input value={studyCode} onChange={e=>setStudyCode(e.target.value.toUpperCase())} placeholder="Opcional · código fornecido pela equipe de pesquisa"/></label><label>Grupo de pesquisa (opcional)<input value={studyGroupCode} onChange={e=>setStudyGroupCode(e.target.value.toUpperCase())} placeholder="Código do grupo informado pelo pesquisador"/></label><small>Se não estiver participando de um estudo, deixe os campos em branco.</small></div>
+            <div className="science-study-enrollment"><label className="research-consent-choice"><input type="checkbox" checked={researchConsent} onChange={e=>setResearchConsent(e.target.checked)}/><span><strong>Autorizo o uso desta aplicação em pesquisas ENAT (opcional)</strong><small>Esta escolha não altera sua avaliação nem seu relatório individual. Pode ser retirada posteriormente. Versão do termo: ENAT-RESEARCH-1.1.</small></span></label><label>Código do estudo (se você recebeu um código de pesquisa)<input value={studyCode} onChange={e=>setStudyCode(e.target.value.toUpperCase())} placeholder="Opcional · código fornecido pela equipe de pesquisa"/></label><label>Grupo de pesquisa (opcional)<input value={studyGroupCode} onChange={e=>setStudyGroupCode(e.target.value.toUpperCase())} placeholder="Código do grupo informado pelo pesquisador"/></label><small>Se não estiver participando de um estudo, deixe os campos em branco.</small></div>
             <ResearchProfile user={user} onSaved={setUser} />
             <div className="section-heading">
               <div>

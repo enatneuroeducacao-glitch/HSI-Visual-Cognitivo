@@ -3,12 +3,12 @@ import { api } from './lib/api';
 
 const states = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
 const categories = ['NONE','ACC','A','B','C','D','E','AB','AC','AD','AE'];
-type Profile = { birthDate:string|null; sex:string|null; licenseCategory?:string|null; city:string|null; state:string|null; institutionType:string|null; institutionName?:string|null; groupSector?:string|null; researchConsent?:boolean };
+type Profile = { privacyNoticeVersion?:string|null; birthDate:string|null; sex:string|null; licenseCategory?:string|null; city:string|null; state:string|null; institutionType:string|null; institutionName?:string|null; groupSector?:string|null; researchConsent?:boolean };
 type Props = { user:any; onSaved:(user:any)=>void };
 export default function ResearchProfile({user,onSaved}:Props){
  const profile=(user?.researchProfile||{}) as Profile;
  const complete=Boolean(profile.birthDate&&profile.sex&&profile.city&&profile.state&&profile.institutionType);
- const [editing,setEditing]=useState(!complete);
+ const [editing,setEditing]=useState(!complete||profile.privacyNoticeVersion!=='ENAT-PRIVACY-1.1');
  const [birthDate,setBirthDate]=useState(profile.birthDate||'');
  const [sex,setSex]=useState(profile.sex||'');
  const [licenseCategory,setLicenseCategory]=useState(profile.licenseCategory||'');
@@ -18,7 +18,7 @@ export default function ResearchProfile({user,onSaved}:Props){
  const [institutionName,setInstitutionName]=useState(profile.institutionName||'');
  const [groupSector,setGroupSector]=useState(profile.groupSector||'');
  const [researchConsent,setResearchConsent]=useState(Boolean(profile.researchConsent));
- const [privacyAccepted,setPrivacyAccepted]=useState(complete);
+ const [privacyAccepted,setPrivacyAccepted]=useState(complete&&profile.privacyNoticeVersion==='ENAT-PRIVACY-1.1');
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState('');
  const [feedback,setFeedback]=useState('');
@@ -26,7 +26,7 @@ export default function ResearchProfile({user,onSaved}:Props){
   e.preventDefault();setBusy(true);setError('');setFeedback('');
   if(!privacyAccepted){setError('É necessário confirmar a leitura do aviso de privacidade.');setBusy(false);return;}
   try{
-   const response=await api.patch('/api/auth/research-profile',{birthDate,sex,licenseCategory:licenseCategory||null,city:city.trim(),state,institutionType,institutionName:institutionType==='INDEPENDENT'?null:(institutionName.trim()||null),groupSector:institutionType==='INDEPENDENT'?null:(groupSector.trim()||null),privacyNoticeVersion:'ENAT-PRIVACY-1.0',researchConsent});
+   const response=await api.patch('/api/auth/research-profile',{birthDate,sex,licenseCategory:licenseCategory||null,city:city.trim(),state,institutionType,institutionName:institutionType==='INDEPENDENT'?null:(institutionName.trim()||null),groupSector:institutionType==='INDEPENDENT'?null:(groupSector.trim()||null),privacyNoticeVersion:'ENAT-PRIVACY-1.1',researchConsent});
    onSaved(response.data.user);setEditing(false);setFeedback('Cadastro salvo. Os dados serão reutilizados nos dois instrumentos.');
   }catch(err:any){setError(err?.response?.data?.error||'Não foi possível salvar o cadastro.');}
   finally{setBusy(false);}
@@ -58,10 +58,10 @@ export default function ResearchProfile({user,onSaved}:Props){
     <p><strong>Dados coletados:</strong> data de nascimento, sexo, município, UF, categoria de habilitação (opcional), tipo e nome da instituição (opcional), grupo/setor (opcional), respostas e informações técnicas da aplicação.</p>
     <p><strong>Finalidade:</strong> registrar e contextualizar suas aplicações, manter histórico e produzir indicadores. O uso das respostas em pesquisas ENAT é opcional.</p>
     <p><strong>Resultados:</strong> análises coletivas devem ser agregadas e suprimir recortes com menos de cinco participantes. Os instrumentos são experimentais e não constituem diagnóstico, avaliação clínica ou aptidão para dirigir.</p>
-    <p className="public-privacy-review">Aviso preliminar: os prazos de retenção, a identificação jurídica completa do controlador e os procedimentos de atendimento devem ser revisados antes da abertura pública definitiva.</p>
+    <p className="public-privacy-review">Aviso versão 1.1: a identificação jurídica completa do controlador, os operadores envolvidos, os prazos de retenção e os canais formais de atendimento precisam ser confirmados antes da expansão pública.</p>
    </div></details>
    <div className="public-consent-block">
-    <label className="public-check"><input type="checkbox" checked={privacyAccepted} onChange={e=>setPrivacyAccepted(e.target.checked)}/><span><strong>Li o aviso de privacidade e concordo com o tratamento dos dados necessários para registrar minha participação.</strong><small>Esta confirmação é necessária para continuar.</small></span></label>
+    <label className="public-check"><input type="checkbox" checked={privacyAccepted} onChange={e=>setPrivacyAccepted(e.target.checked)}/><span><strong>Li e estou ciente do aviso de privacidade e das informações sobre o tratamento dos dados necessários para registrar minha participação.</strong><small>Esta confirmação é necessária para continuar.</small></span></label>
     <label className="public-check optional"><input type="checkbox" checked={researchConsent} onChange={e=>setResearchConsent(e.target.checked)}/><span><strong>Autorizo, opcionalmente, o uso das minhas respostas em pesquisas ENAT.</strong><small>Posso realizar os instrumentos sem autorizar o uso das respostas em pesquisas.</small></span></label>
    </div>
    <div className="dothp-actions"><button className="primary" type="submit" disabled={busy||!privacyAccepted}>{busy?'Salvando cadastro…':'Salvar cadastro e continuar'}</button></div>
