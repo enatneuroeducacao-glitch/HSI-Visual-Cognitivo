@@ -3,12 +3,12 @@ import { api } from './lib/api';
 
 const states = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
 const categories = ['NONE','ACC','A','B','C','D','E','AB','AC','AD','AE'];
-type Profile = { birthDate:string|null; sex:string|null; licenseCategory?:string|null; city:string|null; state:string|null; institutionType:string|null; institutionName?:string|null; groupSector?:string|null; researchConsent?:boolean };
+type Profile = { privacyNoticeVersion?:string|null; birthDate:string|null; sex:string|null; licenseCategory?:string|null; city:string|null; state:string|null; institutionType:string|null; institutionName?:string|null; groupSector?:string|null; researchConsent?:boolean };
 type Props = { user:any; onSaved:(user:any)=>void };
 export default function ResearchProfile({user,onSaved}:Props){
  const profile=(user?.researchProfile||{}) as Profile;
  const complete=Boolean(profile.birthDate&&profile.sex&&profile.city&&profile.state&&profile.institutionType);
- const [editing,setEditing]=useState(!complete);
+ const [editing,setEditing]=useState(!complete||profile.privacyNoticeVersion!=='ENAT-PRIVACY-1.1');
  const [birthDate,setBirthDate]=useState(profile.birthDate||'');
  const [sex,setSex]=useState(profile.sex||'');
  const [licenseCategory,setLicenseCategory]=useState(profile.licenseCategory||'');
@@ -18,7 +18,7 @@ export default function ResearchProfile({user,onSaved}:Props){
  const [institutionName,setInstitutionName]=useState(profile.institutionName||'');
  const [groupSector,setGroupSector]=useState(profile.groupSector||'');
  const [researchConsent,setResearchConsent]=useState(Boolean(profile.researchConsent));
- const [privacyAccepted,setPrivacyAccepted]=useState(complete);
+ const [privacyAccepted,setPrivacyAccepted]=useState(complete&&profile.privacyNoticeVersion==='ENAT-PRIVACY-1.1');
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState('');
  const [feedback,setFeedback]=useState('');
