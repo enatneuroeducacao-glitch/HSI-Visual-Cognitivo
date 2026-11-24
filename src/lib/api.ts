@@ -37,6 +37,8 @@ export const api = {
   get: (path: string) => request(path),
   post: (path: string, body?: unknown) => request(path, { method: 'POST', body: JSON.stringify(body ?? {}) }),
   patch: (path: string, body?: unknown) => request(path, { method: 'PATCH', body: JSON.stringify(body ?? {}) }),
+  put: (path: string, body?: unknown) => request(path, { method: 'PUT', body: JSON.stringify(body ?? {}) }),
+  delete: (path: string) => request(path, { method: 'DELETE' }),
   async download(path: string, filename: string) {
     const response = await fetch(API_URL + path, { headers: token ? { Authorization: 'Bearer ' + token } : {} });
     if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || 'Falha ao exportar relatório.'); }
