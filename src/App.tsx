@@ -195,7 +195,7 @@ function App() {
     ? axes.find(axis => axis.id === current.axis)
     : null;
   const progress = runQuestions.length
-    ? ((index + 1) / runQuestions.length) * 100
+    ? ((answers.length + (selected !== null ? 1 : 0)) / runQuestions.length) * 100
     : 0;
   const consolidatedReport = useMemo(() => {
     const latestByAxis = new Map<string, { result: SavedResult; axis: SavedResult['axes'][number] }>();
@@ -423,7 +423,7 @@ function App() {
     try {
       const response = await api.post('/api/results', payload);
       setLastResult(response.data.result as SavedResult);
-      await api.delete('/api/participant/drafts/HSI Visual Cognitivo');
+      await api.delete('/api/participant/drafts/HSI Visual Cognitivo').catch(() => undefined);
       await loadResults();
       setView('result');
     } catch (error: any) {
@@ -647,7 +647,7 @@ function App() {
               </span>
               <span>{Math.round(progress)}% concluído</span>
             </div>
-            <div className="progress-track">
+            <div className="progress-track" role="progressbar" aria-label="Progresso da avaliação" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}>
               <div style={{ width: progress + '%' }} />
             </div>
             <div className="question-layout">
