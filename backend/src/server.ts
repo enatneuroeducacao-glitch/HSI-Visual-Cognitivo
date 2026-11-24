@@ -320,8 +320,8 @@ app.patch('/api/users/:id', authenticate, allow(UserRole.ADMIN), asyncRoute(asyn
   const schema = z.object({ name:z.string().trim().min(2).max(120).optional(),role:z.enum(['PARTICIPANT','ANALYST','ADMIN']).optional(),status:z.enum(['ACTIVE','INVITED','DISABLED']).optional(),participantCode:z.string().trim().max(60).nullable().optional(),groupId:z.string().nullable().optional() });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({error:'Dados inválidos.'});
-  if (String(String(req.params.id)) === req.authUser!.id && (parsed.data.role && parsed.data.role !== 'ADMIN' || parsed.data.status === 'DISABLED')) return res.status(400).json({error:'Não é permitido remover seu próprio acesso administrativo.'});
-  const user = await prisma.user.update({ where:{id:String(String(req.params.id))},data:parsed.data,select:{id:true,name:true,email:true,role:true,status:true,participantCode:true,groupId:true} });
+  if (String(req.params.id) === req.authUser!.id && (parsed.data.role && parsed.data.role !== 'ADMIN' || parsed.data.status === 'DISABLED')) return res.status(400).json({error:'Não é permitido remover seu próprio acesso administrativo.'});
+  const user = await prisma.user.update({ where:{id:String(req.params.id)},data:parsed.data,select:{id:true,name:true,email:true,role:true,status:true,participantCode:true,groupId:true} });
   await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'USER_UPDATE',targetType:'USER',targetId:user.id,metadata:parsed.data}});
   res.json({user});
 }));
@@ -374,7 +374,7 @@ app.post('/api/institutions', authenticate, allow(UserRole.ADMIN), asyncRoute(as
 app.patch('/api/institutions/:id', authenticate, allow(UserRole.ADMIN), asyncRoute(async (req,res) => {
   const parsed=institutionSchema.partial().extend({active:z.boolean().optional()}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({error:'Dados institucionais inválidos.'});
-  const institution=await prisma.institution.update({where:{id:String(String(req.params.id))},data:parsed.data});
+  const institution=await prisma.institution.update({where:{id:String(req.params.id)},data:parsed.data});
   await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'INSTITUTION_UPDATE',targetType:'INSTITUTION',targetId:institution.id}});
   res.json({institution});
 }));
@@ -985,7 +985,7 @@ app.post('/api/science/versions',authenticate,allow(UserRole.ADMIN),asyncRoute(a
 app.patch('/api/science/versions/:id',authenticate,allow(UserRole.ADMIN),asyncRoute(async(req,res)=>{
   const parsed=versionInputSchema.partial().omit({instrument:true,version:true}).safeParse(req.body);
   if(!parsed.success)return res.status(400).json({error:'Alterações inválidas.',details:parsed.error.flatten()});
-  const current=await prisma.instrumentVersion.findUnique({where:{id:String(String(req.params.id))}});
+  const current=await prisma.instrumentVersion.findUnique({where:{id:String(req.params.id)}});
   if(!current)return res.status(404).json({error:'Versão não encontrada.'});
   if(current.status!=='DRAFT'||current.publishedAt)return res.status(409).json({error:'Versões publicadas são imutáveis. Crie uma nova versão para alterar questões ou pontuação.'});
   const definitionError=validateVersionDefinition(current.instrument,parsed.data.questions??current.questions,parsed.data.scoringCriteria??current.scoringCriteria);
