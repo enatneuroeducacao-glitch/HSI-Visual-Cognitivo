@@ -94,6 +94,7 @@ model AssessmentResult {
   instrumentVersionId String?
   instrumentVersionRecord InstrumentVersion? @relation(fields: [instrumentVersionId], references: [id], onDelete: SetNull)
   scoringSnapshot Json @default("{}")
+  versionVerification String @default("UNVERIFIED_LEGACY")
   studyId String?
   study ScientificStudy? @relation(fields: [studyId], references: [id], onDelete: SetNull)
   studyGroupId String?
