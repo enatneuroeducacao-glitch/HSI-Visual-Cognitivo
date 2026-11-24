@@ -10,6 +10,7 @@ const prisma = new PrismaClient();
 const secret = process.env.JWT_SECRET!;
 const suffix = 'security-test-' + process.pid;
 const ids: Record<string, string> = {};
+let cognitiveStudyId = '';
 const emails = {
   admin: suffix + '-admin@example.test',
   analyst: suffix + '-analyst@example.test',
@@ -28,6 +29,8 @@ before(async () => {
     const user = await prisma.user.create({ data: { name: key, email, passwordHash, role, status, participantCode: key === 'participant' ? suffix + '-code' : null } });
     ids[key] = user.id;
   }
+  const study=await prisma.scientificStudy.create({data:{code:'ENAT-COG-01',title:'Cognitive integration study',hypothesis:'A hipótese de integração verifica o registro de aplicações experimentais.',targetPopulation:'Participantes adultos',inclusionCriteria:'Conta ativa',exclusionCriteria:'Nenhum',samplingPlan:'Amostra de teste automatizado',analysisPlan:'Validação de integração',status:'ACTIVE'}});
+  cognitiveStudyId=study.id;
   await prisma.assessmentResult.createMany({ data: [
     { id: suffix + '-result-a', userId: ids.participant, participantCode: suffix + '-code', mode: 'Eixo individual', completedAt: new Date(), totalQuestions: 5, correct: 4, accuracy: 80, durationSeconds: 90, axes: [], answerDetails: [] },
     { id: suffix + '-result-b', userId: ids.other, participantCode: 'OTHER', mode: 'Eixo individual', completedAt: new Date(), totalQuestions: 5, correct: 2, accuracy: 40, durationSeconds: 100, axes: [], answerDetails: [] },
@@ -36,6 +39,7 @@ before(async () => {
 
 after(async () => {
   await prisma.user.deleteMany({ where: { email: { in: Object.values(emails) } } });
+  await prisma.scientificStudy.deleteMany({where:{id:cognitiveStudyId}});
   await prisma.$disconnect();
 });
 
@@ -149,5 +153,7 @@ test('resultado não pode ser reenviado com o mesmo identificador', async () => 
   assert.equal(first.status, 201);
   assert.equal(first.body.result.applicationType, 'EXPERIMENTAL');
   assert.equal(first.body.result.studyCode, 'ENAT-COG-01');
+  assert.equal(first.body.result.studyId, cognitiveStudyId);
+  assert.equal(first.body.result.versionVerification, 'VERIFIED');
   assert.equal((await request(app).post('/api/results').set('Authorization', 'Bearer ' + tokenFor(ids.participant)).send(payload)).status, 409);
 });
