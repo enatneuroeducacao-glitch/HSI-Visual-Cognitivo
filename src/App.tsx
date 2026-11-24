@@ -344,8 +344,8 @@ function App() {
 
   const startTest = async (axisId?: string) => {
     const profile = user?.researchProfile;
-    if (!profile?.birthDate || !profile?.sex || !profile?.city || !profile?.state || !profile?.institutionType) {
-      setSaveError('Antes de iniciar os exercícios, complete o cadastro de pesquisa do respondente.');
+    if (!profile?.birthDate || !profile?.sex || !profile?.city || !profile?.state || !profile?.institutionType || profile?.privacyNoticeVersion !== 'ENAT-PRIVACY-1.1') {
+      setSaveError('Antes de iniciar os exercícios, complete o cadastro e confirme a leitura do aviso de privacidade atualizado.');
       setView('home');
       return;
     }
@@ -534,7 +534,7 @@ function App() {
           </div>
         </header>
 
-        {view === 'privacy' && <main className="main-content"><PrivacyCenter user={user} onUserChange={setUser} /></main>}
+        {view === 'privacy' && <main className="main-content"><PrivacyCenter user={user} onUserChange={(next)=>{setUser(next);setResearchConsent(Boolean(next?.researchProfile?.researchConsent));}} /></main>}
         {view === 'admin' && (user.role === 'ADMIN' || user.role === 'ANALYST') && <AdminPanel role={user.role} />}
         {view === 'dothp' && <DothpAssessment participantData={user.researchProfile} />}
 
