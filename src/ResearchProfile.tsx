@@ -61,7 +61,7 @@ export default function ResearchProfile({user,onSaved}:Props){
     <p className="public-privacy-review">Aviso versão 1.1: a identificação jurídica completa do controlador, os operadores envolvidos, os prazos de retenção e os canais formais de atendimento precisam ser confirmados antes da expansão pública.</p>
    </div></details>
    <div className="public-consent-block">
-    <label className="public-check"><input type="checkbox" checked={privacyAccepted} onChange={e=>setPrivacyAccepted(e.target.checked)}/><span><strong>Li o aviso de privacidade e concordo com o tratamento dos dados necessários para registrar minha participação.</strong><small>Esta confirmação é necessária para continuar.</small></span></label>
+    <label className="public-check"><input type="checkbox" checked={privacyAccepted} onChange={e=>setPrivacyAccepted(e.target.checked)}/><span><strong>Li e estou ciente do aviso de privacidade e das informações sobre o tratamento dos dados necessários para registrar minha participação.</strong><small>Esta confirmação é necessária para continuar.</small></span></label>
     <label className="public-check optional"><input type="checkbox" checked={researchConsent} onChange={e=>setResearchConsent(e.target.checked)}/><span><strong>Autorizo, opcionalmente, o uso das minhas respostas em pesquisas ENAT.</strong><small>Posso realizar os instrumentos sem autorizar o uso das respostas em pesquisas.</small></span></label>
    </div>
    <div className="dothp-actions"><button className="primary" type="submit" disabled={busy||!privacyAccepted}>{busy?'Salvando cadastro…':'Salvar cadastro e continuar'}</button></div>
