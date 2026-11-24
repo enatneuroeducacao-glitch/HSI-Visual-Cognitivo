@@ -5,6 +5,7 @@ import DothpAssessment from './DothpAssessment';
 import InstrumentHistory from './InstrumentHistory';
 import PublicAccess from './PublicAccess';
 import ResearchProfile from './ResearchProfile';
+import PrivacyCenter from './PrivacyCenter';
 import { exportReportCsv, exportReportExcel } from './report-export';
 
 const logoUrl = new URL('../assets/hsi-visual-cognitivo.webp', import.meta.url).href;
@@ -473,6 +474,12 @@ function App() {
           ◉ <span>HSI-DOTH-P comportamental</span>
         </button>
         <button
+          className={view === 'privacy' ? 'nav-item active' : 'nav-item'}
+          onClick={() => setView('privacy')}
+        >
+          ◈ <span>Privacidade e meus dados</span>
+        </button>
+        <button
           className={view === 'history' ? 'nav-item active' : 'nav-item'}
           onClick={() => {
             setView('history');
@@ -527,6 +534,7 @@ function App() {
           </div>
         </header>
 
+        {view === 'privacy' && <main className="main-content"><PrivacyCenter /></main>}
         {view === 'admin' && (user.role === 'ADMIN' || user.role === 'ANALYST') && <AdminPanel role={user.role} />}
         {view === 'dothp' && <DothpAssessment participantData={user.researchProfile} />}
 
