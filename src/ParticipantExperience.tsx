@@ -6,6 +6,10 @@ type Props = {
   participantCode?: string;
   cognitiveApplications: number;
   behavioralApplications: number;
+  cognitiveDraftAvailable: boolean;
+  behavioralDraftAvailable: boolean;
+  onResumeCognitive: () => void;
+  onResumeBehavioral: () => void;
   onStartCognitive: () => void;
   onStartBehavioral: () => void;
   onHistory: () => void;
@@ -39,6 +43,8 @@ export default function ParticipantExperience({
         <div><span className="eyebrow">SEU ACESSO PESSOAL</span><strong>Código privado de participação</strong><p>Guarde este código para retomar seu histórico em outro dispositivo. Não o compartilhe.</p><code>{participantCode}</code></div>
         <button className="participant-secondary" onClick={() => navigator.clipboard.writeText(participantCode)}>Copiar código</button>
       </section>}
+
+      {(cognitiveDraftAvailable || behavioralDraftAvailable) && <section className="participant-resume-panel" aria-label="Sessões interrompidas"><div><span className="eyebrow">CONTINUAR DE ONDE PAROU</span><h2>Encontramos um progresso salvo</h2><p>Você pode retomar uma avaliação interrompida sem começar novamente.</p></div><div className="participant-resume-actions">{behavioralDraftAvailable&&<button className="participant-secondary" onClick={onResumeBehavioral}>Retomar HSI-DOTH-P →</button>}{cognitiveDraftAvailable&&<button className="participant-secondary" onClick={onResumeCognitive}>Retomar Visual Cognitivo →</button>}</div></section>}
 
       <div className="participant-section-title"><div><span className="eyebrow">INSTRUMENTOS DISPONÍVEIS</span><h2>O que você deseja avaliar?</h2><p>Leia a descrição e escolha por onde começar. Você pode realizar os dois instrumentos em momentos diferentes.</p></div><span className="participant-separate-note">Instrumentos independentes</span></div>
 
