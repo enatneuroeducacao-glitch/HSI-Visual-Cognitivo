@@ -1528,3 +1528,42 @@ button:disabled {
 .science-study-enrollment input,.dothp-context input{width:100%;border:1px solid #d7dfeb;border-radius:8px;padding:10px 11px;background:#fff;color:#1c2d44;font:inherit;font-size:13px}
 .science-study-enrollment small{grid-column:1/-1;color:#718096;font-size:11px}
 @media(max-width:650px){.science-study-enrollment{grid-template-columns:1fr}}
+
+
+/* Scientific governance: guided instrument editor */
+.science-editor-block{display:grid;gap:14px;margin:16px 0;padding:18px;border:1px solid #dce4ef;border-radius:14px;background:#fbfcff}
+.science-editor-block h4,.science-editor-block h5{margin:0;color:#172b49}
+.science-editor-block p{margin:3px 0 0;color:#687991;font-size:12px;line-height:1.5}
+.science-editor-heading{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.science-editor-heading>span{white-space:nowrap;padding:6px 10px;border-radius:20px;background:#eaf0ff;color:#4255b8;font-size:12px;font-weight:700}
+.science-question-list{display:grid;gap:9px;max-height:540px;overflow:auto;padding-right:4px}
+.science-question-editor{border:1px solid #dce4ef;border-radius:10px;background:#fff;padding:12px}
+.science-question-editor summary{display:flex;justify-content:space-between;align-items:center;gap:12px;cursor:pointer;list-style:none}
+.science-question-editor summary::-webkit-details-marker{display:none}
+.science-question-editor summary span{font-size:11px;color:#718198;text-align:right}
+.science-question-editor>label,.science-dimension-editor label,.science-editor-block>label{display:grid;gap:6px;margin-top:12px;color:#53647b;font-size:12px;font-weight:650}
+.science-question-editor textarea,.science-dimension-editor textarea{min-height:76px}
+.science-question-editor input,.science-question-editor textarea,.science-question-editor select,.science-dimension-editor input,.science-dimension-editor textarea,.science-field-grid input,.science-weight-list input,.science-editor-block>label input{width:100%;min-width:0;border:1px solid #d7dfeb;border-radius:8px;padding:9px 10px;background:#fff;color:#1c2d44;font:inherit;font-size:13px}
+.science-option-editor{display:grid;gap:8px;margin-top:14px}
+.science-option-row{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;align-items:center}
+.science-correct-option{display:flex;align-items:center;gap:6px;color:#53647b;font-size:11px}
+.science-correct-option input,.science-reverse-grid input,.science-event-details input{width:auto}
+.science-field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.science-field-grid label,.science-weight-list label{display:grid;gap:6px;color:#53647b;font-size:12px;font-weight:650}
+.science-reverse-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.science-reverse-grid label{display:flex;align-items:center;gap:5px;padding:8px;border:1px solid #e0e7f0;border-radius:8px;color:#53647b;font-size:11px}
+.science-dimension-editor{display:grid;gap:8px;padding:12px;border:1px solid #e0e7f0;border-radius:10px;background:#fff}
+.science-weight-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.science-weight-list label{grid-template-columns:minmax(0,1fr) 100px;align-items:center;padding:9px;border:1px solid #e0e7f0;border-radius:8px;background:#fff;text-transform:capitalize}
+.science-advanced-editor{margin:12px 0;padding:12px;border:1px dashed #bdc9da;border-radius:10px}
+.science-advanced-editor summary{cursor:pointer;color:#435574;font-size:12px;font-weight:700}
+.science-snapshot{margin-top:12px;padding:12px;border:1px solid #e0e7f0;border-radius:10px}
+.science-snapshot summary{cursor:pointer;color:#435574;font-size:12px;font-weight:700}
+.science-snapshot-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}
+.science-snapshot-grid>div{display:grid;gap:5px;padding:10px;border-radius:8px;background:#f4f7fb;font-size:11px;color:#52647e}
+.science-snapshot-questions{display:grid;gap:8px;max-height:360px;overflow:auto;padding-left:26px}
+.science-snapshot-questions li{padding:7px 0;color:#283a55;font-size:12px}
+.science-snapshot-questions small{display:block;margin-top:3px;color:#7a899e}
+.science-event-details{display:grid;gap:5px;margin-top:8px;padding:10px;border-radius:8px;background:#f6f8fc;color:#5c6d84;font-size:11px}
+.science-event-details span{overflow-wrap:anywhere}
+@media(max-width:720px){.science-field-grid,.science-weight-list,.science-snapshot-grid{grid-template-columns:1fr}.science-reverse-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.science-editor-heading{align-items:flex-start;flex-direction:column}}
