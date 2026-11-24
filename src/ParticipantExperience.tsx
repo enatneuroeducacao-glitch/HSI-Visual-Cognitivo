@@ -16,6 +16,7 @@ type Props = {
 
 export default function ParticipantExperience({
   participantName, publicAccess, participantCode, cognitiveApplications, behavioralApplications,
+  cognitiveDraftAvailable, behavioralDraftAvailable, onResumeCognitive, onResumeBehavioral,
   onStartCognitive, onStartBehavioral, onHistory, onPrivacy
 }: Props) {
   return (
