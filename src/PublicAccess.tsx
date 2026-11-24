@@ -69,7 +69,7 @@ export default function PublicAccess({ onAuthenticated }: Props) {
       const response = await publicAccess.register({
         birthDate, sex, licenseCategory: licenseCategory || null, city: city.trim(), state,
         institutionType, institutionName: institutionName.trim() || null,
-        groupSector: groupSector.trim() || null, privacyNoticeVersion: 'ENAT-PRIVACY-1.0',
+        groupSector: groupSector.trim() || null, privacyNoticeVersion: 'ENAT-PRIVACY-1.1',
         researchConsent
       });
       setCreatedCode(response.participantCode);
@@ -159,7 +159,7 @@ export default function PublicAccess({ onAuthenticated }: Props) {
                 <p><strong>Compartilhamento e resultados:</strong> os dados cadastrais são restritos à administração autorizada. As análises de pesquisa devem ser apresentadas em formato agregado, com supressão de recortes pequenos. Os dados não são vendidos.</p>
                 <p><strong>Seus direitos:</strong> para solicitar acesso, correção ou exclusão de dados, ou retirar a autorização de pesquisa, entre em contato pelo endereço informado acima, identificando sua solicitação com o código privado. A retirada da autorização impede o uso futuro em novos agregados, sem alterar automaticamente resultados já anonimizados e divulgados.</p>
                 <p><strong>Limites:</strong> os instrumentos são experimentais e não constituem diagnóstico, avaliação clínica, aptidão para dirigir ou certificação profissional.</p>
-                <p className="public-privacy-review">Aviso preliminar da plataforma. Os prazos formais de retenção, a identificação jurídica completa do controlador e os procedimentos de atendimento devem ser confirmados e revisados antes da abertura pública definitiva da pesquisa.</p>
+                <p className="public-privacy-review">Aviso de privacidade versão 1.1. A identificação jurídica completa do controlador, os operadores envolvidos, os prazos específicos de retenção e os canais formais de atendimento devem ser confirmados pelo responsável institucional antes da expansão pública.</p>
               </div>
             </details>
             <div className="public-consent-block">
