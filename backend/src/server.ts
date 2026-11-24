@@ -926,6 +926,30 @@ async function ensureActiveInstrumentVersion(instrument:string) {
   }});
   return version;
 }
+function validateVersionDefinition(instrument:string,questionsValue:any,criteria:any):string|null {
+ if(!Array.isArray(questionsValue))return 'O banco de questões deve ser uma lista.';
+ if(instrument==='HSI-DOTH-P'){
+  if(questionsValue.length!==25)return 'O HSI-DOTH-P deve conter exatamente 25 afirmações.';
+  const ids=['decision','organization','time','humanization','psychocomportamental'];
+  if(questionsValue.some(q=>!ids.includes(String(q.dimension||q.dimensionId))||typeof (q.prompt||q.statement)!=='string'||String(q.prompt||q.statement).trim().length<8))return 'Cada afirmação deve conter uma dimensão válida e um enunciado.';
+  const reverse=criteria?.reverseItems;
+  if(!Array.isArray(reverse)||reverse.some((x:any)=>!Number.isInteger(x)||x<1||x>25)||new Set(reverse).size!==reverse.length)return 'Informe os itens reversos como posições únicas de 1 a 25.';
+  const scaleMin=Number(criteria?.scale?.min??1),scaleMax=Number(criteria?.scale?.max??5);
+  const scoreMin=Number(criteria?.scoreRange?.min??0),scoreMax=Number(criteria?.scoreRange?.max??100);
+  if(!Number.isFinite(scaleMin)||!Number.isFinite(scaleMax)||scaleMax<=scaleMin||!Number.isFinite(scoreMin)||!Number.isFinite(scoreMax)||scoreMax<=scoreMin)return 'Escala e faixa de pontuação inválidas.';
+  if(!Array.isArray(criteria?.dimensions)||criteria.dimensions.length!==5||criteria.dimensions.some((d:any)=>!ids.includes(d.id)))return 'Os critérios devem definir as cinco dimensões do instrumento.';
+ }else{
+  const axes=['logic','attention','patterns','anticipation','risk','decision'];
+  if(questionsValue.length!==30)return 'O HSI Visual Cognitivo deve conter 30 questões, cinco por eixo.';
+  const seen=new Set<string>();const counts=new Map<string,number>();
+  for(const q of questionsValue){
+   if(typeof q.id!=='string'||seen.has(q.id)||!axes.includes(String(q.axis))||typeof q.prompt!=='string'||!Array.isArray(q.options)||q.options.length<2||!Number.isInteger(q.answer)||q.answer<0||q.answer>=q.options.length)return 'Questão cognitiva inválida: confira ID único, eixo, enunciado, alternativas e gabarito.';
+   seen.add(q.id);counts.set(q.axis,(counts.get(q.axis)||0)+1);
+  }
+  if(axes.some(axis=>counts.get(axis)!==5))return 'Cada eixo cognitivo deve conter exatamente cinco questões.';
+ }
+ return null;
+}
 const versionInputSchema=z.object({
   instrument:z.enum(instrumentNames),version:z.string().trim().min(1).max(30),
   changeSummary:z.string().trim().min(10).max(3000),
@@ -948,6 +972,8 @@ app.get('/api/science/overview',authenticate,allow(UserRole.ADMIN,UserRole.ANALY
 app.post('/api/science/versions',authenticate,allow(UserRole.ADMIN),asyncRoute(async(req,res)=>{
   const parsed=versionInputSchema.safeParse(req.body);
   if(!parsed.success)return res.status(400).json({error:'Dados da versão inválidos.',details:parsed.error.flatten()});
+  const definitionError=validateVersionDefinition(parsed.data.instrument,parsed.data.questions,parsed.data.scoringCriteria);
+  if(definitionError)return res.status(400).json({error:definitionError});
   const v=await prisma.instrumentVersion.create({data:{...parsed.data,status:'DRAFT',createdBy:req.authUser!.id,questions:parsed.data.questions as Prisma.InputJsonValue,scoringCriteria:parsed.data.scoringCriteria as Prisma.InputJsonValue}});
   await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'INSTRUMENT_VERSION_DRAFT_CREATED',targetType:'INSTRUMENT_VERSION',targetId:v.id,metadata:{instrument:v.instrument,version:v.version}}});
   res.status(201).json({version:v});
@@ -958,6 +984,8 @@ app.patch('/api/science/versions/:id',authenticate,allow(UserRole.ADMIN),asyncRo
   const current=await prisma.instrumentVersion.findUnique({where:{id:req.params.id}});
   if(!current)return res.status(404).json({error:'Versão não encontrada.'});
   if(current.status!=='DRAFT'||current.publishedAt)return res.status(409).json({error:'Versões publicadas são imutáveis. Crie uma nova versão para alterar questões ou pontuação.'});
+  const definitionError=validateVersionDefinition(current.instrument,parsed.data.questions??current.questions,parsed.data.scoringCriteria??current.scoringCriteria);
+  if(definitionError)return res.status(400).json({error:definitionError});
   const updated=await prisma.instrumentVersion.update({where:{id:current.id},data:{...parsed.data,questions:parsed.data.questions as Prisma.InputJsonValue|undefined,scoringCriteria:parsed.data.scoringCriteria as Prisma.InputJsonValue|undefined}});
   await prisma.auditLog.create({data:{actorId:req.authUser!.id,action:'INSTRUMENT_VERSION_DRAFT_UPDATED',targetType:'INSTRUMENT_VERSION',targetId:updated.id,metadata:{instrument:updated.instrument,version:updated.version}}});
   res.json({version:updated});
