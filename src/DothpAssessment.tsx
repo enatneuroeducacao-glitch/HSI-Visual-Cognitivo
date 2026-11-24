@@ -84,14 +84,14 @@ export default function DothpAssessment({participantData=null,resumeDraft=false}
    return {...d,mean,index:values.length?Math.round(scoreMin+((mean-min)/(max-min))*(scoreMax-scoreMin)):0,answered:values.length};
  }),[answers,items,dimensions,reverse,scoringCriteria]);
  const setAnswer=(i:number,v:number)=>{setAnswers(prev=>({...prev,[i]:v}));setShowResult(false)};
- const reset=()=>{setAnswers({});setShowResult(false);setConfirmFinish(false);setSaveError('');setSaved(false);setResearchConsent(false);setProfileError('')};
+ const reset=()=>{void api.delete('/api/participant/drafts/HSI-DOTH-P').catch(()=>undefined);setAnswers({});setShowResult(false);setConfirmFinish(false);setSaveError('');setSaved(false);setResearchConsent(false);setProfileError('')};
  const saveAndShowResult=async()=>{
   if(!complete||saving)return;
   if(!profileComplete){setProfileError('Preencha data de nascimento, sexo, município, UF e tipo de vínculo para continuar.');return;}
   setSaving(true);setSaveError('');setProfileError('');
   try{
    await api.post('/api/instrument-results',{id:crypto.randomUUID(),instrument:'HSI-DOTH-P',context,contextVersion:'1.1',instrumentVersion,researchConsent,participantData:{birthDate:participantData?.birthDate||birthDate,sex:participantData?.sex||sex,licenseCategory:participantData?.licenseCategory??(licenseCategory||null),city:participantData?.city||city.trim(),state:participantData?.state||state.trim().toUpperCase(),country:'BR',institutionType:participantData?.institutionType||institutionType,institutionName:participantData?.institutionName??(institutionName.trim()||null),groupSector:participantData?.groupSector??(groupSector.trim()||null)},answers:items.map((_,i)=>answers[i]),...(studyCode.trim()?{studyCode:studyCode.trim().toUpperCase(),...(studyGroupCode.trim()?{studyGroupCode:studyGroupCode.trim().toUpperCase()}:{})}:{})});
-   await api.delete('/api/participant/drafts/HSI-DOTH-P');setSaved(true);setShowResult(true);
+   await api.delete('/api/participant/drafts/HSI-DOTH-P').catch(()=>undefined);setSaved(true);setShowResult(true);
   }catch(error:any){setSaveError(error?.response?.data?.error||'Não foi possível registrar suas respostas. Verifique a conexão e tente novamente.');}
   finally{setSaving(false);}
  };
