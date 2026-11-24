@@ -470,7 +470,7 @@ function App() {
         >
           ⌂ <span>Painel inicial</span>
         </button>
-        <button className={view === 'dothp' ? 'nav-item active' : 'nav-item'} onClick={() => { if (!user?.researchProfile?.birthDate) { setSaveError('Complete primeiro o cadastro de pesquisa no painel inicial.'); setView('home'); return; } setView('dothp'); }}>
+        <button className={view === 'dothp' ? 'nav-item active' : 'nav-item'} onClick={() => { if (!user?.researchProfile?.birthDate || user?.researchProfile?.privacyNoticeVersion !== 'ENAT-PRIVACY-1.1') { setSaveError('Complete o cadastro e confirme o aviso de privacidade atualizado no painel inicial.'); setView('home'); return; } setView('dothp'); }}>
           ◉ <span>HSI-DOTH-P comportamental</span>
         </button>
         <button
