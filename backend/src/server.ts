@@ -612,6 +612,7 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
       dimensions: scored.dimensions as Prisma.InputJsonValue,
     },
     });
+    await tx.consentEvent.create({data:{userId:req.authUser!.id,purpose:'RESEARCH_USE',granted:data.researchConsent,consentVersion:RESEARCH_CONSENT_VERSION,instrument:'HSI-DOTH-P',assessmentId:created.id,source:'ASSESSMENT_SUBMISSION'}});
     await tx.auditLog.create({ data: { actorId: req.authUser!.id, action: 'INSTRUMENT_SUBMIT', targetType: 'INSTRUMENT_RESULT', targetId: created.id, metadata: { instrument: data.instrument, context: data.context, applicationNumber, applicationType:created.applicationType, studyCode } } });
     return created;
   }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable}));
