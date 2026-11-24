@@ -107,6 +107,8 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [mode, setMode] = useState('full');
   const [researchConsent,setResearchConsent] = useState(false);
+  const [studyCode,setStudyCode] = useState('');
+  const [studyGroupCode,setStudyGroupCode] = useState('');
   const [runQuestions, setRunQuestions] = useState<Question[]>([]);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
