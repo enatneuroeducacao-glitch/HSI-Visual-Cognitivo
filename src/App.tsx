@@ -6,6 +6,7 @@ import InstrumentHistory from './InstrumentHistory';
 import PublicAccess from './PublicAccess';
 import ResearchProfile from './ResearchProfile';
 import PrivacyCenter from './PrivacyCenter';
+import ParticipantExperience from './ParticipantExperience';
 import { exportReportCsv, exportReportExcel } from './report-export';
 
 const logoUrl = new URL('../assets/hsi-visual-cognitivo.webp', import.meta.url).href;
@@ -126,6 +127,9 @@ function App() {
     }>
   >([]);
   const [results, setResults] = useState<SavedResult[]>([]);
+  const [behavioralResults, setBehavioralResults] = useState<any[]>([]);
+  const [finishConfirmation, setFinishConfirmation] = useState(false);
+  const [pendingFinalAnswers, setPendingFinalAnswers] = useState<typeof answers>([]);
   const [view, setView] = useState('home');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -150,8 +154,9 @@ function App() {
 
   const loadResults = async () => {
     try {
-      const response = await api.get('/api/results');
+      const [response, behavioral] = await Promise.all([api.get('/api/results'), api.get('/api/instrument-results')]);
       setResults(response.data.results || []);
+      setBehavioralResults(behavioral.data.results || []);
     } catch {
       setSaveError(
         'Não foi possível carregar o histórico. Verifique sua conexão e tente novamente.'
@@ -421,7 +426,8 @@ function App() {
       setSelected(null);
       setQuestionStartedAt(Date.now());
     } else {
-      finishTest(nextAnswers);
+      setPendingFinalAnswers(nextAnswers);
+      setFinishConfirmation(true);
     }
   };
 
@@ -429,6 +435,8 @@ function App() {
     await auth.signOut();
     setUser(null);
     setResults([]);
+    setBehavioralResults([]);
+    setFinishConfirmation(false);
     setView('home');
   };
 
@@ -465,12 +473,12 @@ function App() {
         </div>
         <div className="side-label">AMBIENTE</div>
         <button
-          className={view === 'home' ? 'nav-item active' : 'nav-item'}
+          className={['home','cognitive-intro','dothp-intro'].includes(view) ? 'nav-item active' : 'nav-item'}
           onClick={() => setView('home')}
         >
           ⌂ <span>Painel inicial</span>
         </button>
-        <button className={view === 'dothp' ? 'nav-item active' : 'nav-item'} onClick={() => { if (!user?.researchProfile?.birthDate || user?.researchProfile?.privacyNoticeVersion !== 'ENAT-PRIVACY-1.1') { setSaveError('Complete o cadastro e confirme o aviso de privacidade atualizado no painel inicial.'); setView('home'); return; } setView('dothp'); }}>
+        <button className={view === 'dothp' || view === 'dothp-intro' ? 'nav-item active' : 'nav-item'} onClick={() => { if (!user?.researchProfile?.birthDate || user?.researchProfile?.privacyNoticeVersion !== 'ENAT-PRIVACY-1.1') { setSaveError('Complete o cadastro e confirme o aviso de privacidade atualizado no painel inicial.'); setView('home'); return; } setView('dothp-intro'); }}>
           ◉ <span>HSI-DOTH-P comportamental</span>
         </button>
         <button
@@ -516,8 +524,10 @@ function App() {
             <h2>
               {view === 'home'
                 ? 'Painel de avaliação'
-                : view === 'dothp'
+                : view === 'dothp' || view === 'dothp-intro'
                   ? 'Avaliação comportamental HSI-DOTH-P'
+                  : view === 'cognitive-intro'
+                    ? 'HSI Visual Cognitivo'
                   : view === 'history'
                   ? 'Histórico de avaliações'
                   : view === 'test'
@@ -539,99 +549,47 @@ function App() {
         {view === 'dothp' && <DothpAssessment participantData={user.researchProfile} />}
 
         {view === 'home' && (
-          <section className="content">
-            <div className="hero">
-              <div>
-                <span className="hero-tag">MÓDULO COMPLEMENTAR</span>
-                <h1>
-                  Observe. Identifique.
-                  <br />
-                  <em>Decida com consciência.</em>
-                </h1>
-                <p>
-                  Exercícios visuais organizados em seis eixos para observar
-                  padrões de resposta, precisão e tempo de execução.
-                </p>
-              </div>
-              <div className="hero-art">
-                <div className="orbit orbit-one">◉</div>
-                <div className="orbit orbit-two">△</div>
-                <div className="orbit orbit-three">□</div>
-                <div className="hero-core">
-                  HSI
-                  <br />
-                  <b>VC</b>
-                </div>
-              </div>
-            </div>
+          <ParticipantExperience
+            participantName={user.name || ''}
+            publicAccess={Boolean(user.publicAccess)}
+            participantCode={user.participantCode}
+            cognitiveApplications={results.length}
+            behavioralApplications={behavioralResults.length}
+            onStartCognitive={() => setView('cognitive-intro')}
+            onStartBehavioral={() => setView('dothp-intro')}
+            onHistory={() => { setView('history'); loadResults(); }}
+            onPrivacy={() => setView('privacy')}
+          />
+        )}
 
-            {saveError && <div className="notice error" role="alert">{saveError}</div>}
-            {user.publicAccess && (
-              <div className="public-code-reminder">
-                <div><span>Seu código privado de participação — guarde para retomar em outro dispositivo</span><strong>{user.participantCode}</strong></div>
-                <button type="button" onClick={() => navigator.clipboard.writeText(user.participantCode)}>Copiar código</button>
-                <div className="public-consent-setting">
-                  <span>Uso das respostas em pesquisas ENAT: <strong>{user.researchProfile?.researchConsent ? 'autorizado' : 'não autorizado'}</strong></span>
-                  <button type="button" disabled={consentUpdating} onClick={togglePublicResearchConsent}>{consentUpdating ? 'Atualizando…' : user.researchProfile?.researchConsent ? 'Retirar autorização' : 'Autorizar pesquisa'}</button>
-                </div>
-                {consentFeedback && <small className="public-consent-feedback" role="status">{consentFeedback}</small>}
-              </div>
-            )}
-            <div className="science-study-enrollment"><label className="research-consent-choice"><input type="checkbox" checked={researchConsent} onChange={e=>setResearchConsent(e.target.checked)}/><span><strong>Autorizo o uso desta aplicação em pesquisas ENAT (opcional)</strong><small>Esta escolha não altera sua avaliação nem seu relatório individual. Pode ser retirada posteriormente. Versão do termo: ENAT-RESEARCH-1.1.</small></span></label><label>Código do estudo (se você recebeu um código de pesquisa)<input value={studyCode} onChange={e=>setStudyCode(e.target.value.toUpperCase())} placeholder="Opcional · código fornecido pela equipe de pesquisa"/></label><label>Grupo de pesquisa (opcional)<input value={studyGroupCode} onChange={e=>setStudyGroupCode(e.target.value.toUpperCase())} placeholder="Código do grupo informado pelo pesquisador"/></label><small>Se não estiver participando de um estudo, deixe os campos em branco.</small></div>
-            <ResearchProfile user={user} onSaved={setUser} />
-            <div className="section-heading">
-              <div>
-                <span className="eyebrow">SEIS EIXOS COGNITIVOS</span>
-                <h3>Escolha como deseja começar</h3>
-              </div>
-              <span className="count-pill">30 exercícios · 5 por eixo</span>
+        {view === 'cognitive-intro' && (
+          <section className="participant-intro-page">
+            <button className="participant-back" onClick={() => setView('home')}>← Voltar aos instrumentos</button>
+            <div className="participant-intro-card">
+              <span className="eyebrow">EXERCÍCIOS · HSI VISUAL COGNITIVO</span>
+              <h1>Explore habilidades em tarefas visuais e de raciocínio.</h1>
+              <p>Esta bateria reúne exercícios experimentais que observam precisão e tempo de resposta em seis eixos. As tarefas não são um diagnóstico e não medem, isoladamente, sua capacidade geral.</p>
+              <div className="participant-intro-facts"><span><b>30</b> exercícios</span><span><b>6</b> eixos</span><span><b>Sem limite rígido</b> de tempo total</span></div>
+              <h2>O que será observado</h2>
+              <ul><li>Raciocínio lógico e atenção seletiva</li><li>Percepção de padrões e antecipação de situações</li><li>Percepção de riscos no trânsito e tomada de decisão</li></ul>
+              <div className="participant-intro-notice"><strong>Antes de começar</strong><p>Responda em um ambiente tranquilo. Leia cada questão com atenção. Você poderá acompanhar seu progresso; ao concluir, será solicitado que confirme o envio.</p><p>Seus resultados serão apresentados somente como descrição desta aplicação, sem classificação clínica ou de aptidão.</p></div>
+              <button className="participant-primary" onClick={() => startTest()}>Iniciar exercícios <span aria-hidden="true">→</span></button>
             </div>
-            <div className="axis-grid">
-              {axes.map((axis, i) => (
-                <article className="axis-card" key={axis.id}>
-                  <div className="axis-top">
-                    <span className="axis-number">0{i + 1}</span>
-                    <span className="axis-symbol" style={{ color: axis.color }}>
-                      {['⌘', '◎', '▦', '◉', '⚠', '↗'][i]}
-                    </span>
-                  </div>
-                  <h3>{axis.title}</h3>
-                  <p>{axis.description}</p>
-                  <button
-                    className="text-button"
-                    onClick={() => startTest(axis.id)}
-                  >
-                    Iniciar eixo <span>→</span>
-                  </button>
-                </article>
-              ))}
-            </div>
+          </section>
+        )}
 
-            <div className="start-panel">
-              <div>
-                <span className="eyebrow">AVALIAÇÃO INTEGRADA</span>
-                <h3>Executar os 30 exercícios</h3>
-                <p>
-                  Percorra os seis eixos em uma única sessão e receba um
-                  panorama comparativo experimental.
-                </p>
-              </div>
-              <div className="start-action">
-                <button className="primary" onClick={() => startTest()}>
-                  Iniciar avaliação completa <span>→</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="disclaimer">
-              <span>ⓘ</span>
-              <p>
-                <strong>Nota metodológica:</strong> esta versão é um protótipo
-                experimental. Os percentuais e tempos descrevem somente o
-                desempenho nesta bateria. Não são normas populacionais,
-                diagnóstico, laudo, medida validada de aptidão ou substituto do
-                HSI-DOTH-P.
-              </p>
+        {view === 'dothp-intro' && (
+          <section className="participant-intro-page">
+            <button className="participant-back" onClick={() => setView('home')}>← Voltar aos instrumentos</button>
+            <div className="participant-intro-card behavioral">
+              <span className="eyebrow">AUTOAVALIAÇÃO · HSI-DOTH-P</span>
+              <h1>Reflita sobre seus padrões de comportamento.</h1>
+              <p>O HSI-DOTH-P reúne afirmações sobre cinco dimensões da experiência humana. Não existem respostas certas ou erradas: responda de acordo com a forma como costuma agir.</p>
+              <div className="participant-intro-facts"><span><b>25</b> afirmações</span><span><b>5</b> dimensões</span><span><b>1–5</b> escala de concordância</span></div>
+              <h2>As cinco dimensões</h2>
+              <ul><li>Decisão e Organização</li><li>Tempo e Humanização</li><li>Psicocomportamental</li></ul>
+              <div className="participant-intro-notice"><strong>Antes de começar</strong><p>Considere experiências recentes e representativas. Não responda pensando no que seria ideal, mas no que realmente costuma acontecer.</p><p>Você verá sua devolutiva dimensional ao finalizar. A interpretação é descritiva e não representa diagnóstico, personalidade fixa ou aptidão.</p></div>
+              <button className="participant-primary" onClick={() => setView('dothp')}>Iniciar autoavaliação <span aria-hidden="true">→</span></button>
             </div>
           </section>
         )}
