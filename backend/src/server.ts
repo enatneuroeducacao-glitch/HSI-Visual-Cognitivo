@@ -407,6 +407,7 @@ const resultSchema = z.object({
   completedAt:z.string().datetime(), totalQuestions:z.number().int().min(1).max(30),
   durationSeconds:z.number().int().min(1).max(86400),
   studyCode:z.string().trim().min(2).max(80).optional(),
+  studyGroupCode:z.string().trim().min(1).max(40).optional(),
   instrumentVersion:z.string().trim().min(1).max(20).default('1.0'),
   answerDetails:z.array(z.object({ questionId:z.string().min(1).max(40), axisId:z.string().min(1).max(40), selected:z.number().int().min(0).max(3), seconds:z.number().int().min(1).max(3600) }).strict()).min(1).max(30),
 }).strict();
@@ -441,17 +442,24 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
     const axisCorrect = rows.filter(a => a.correct).length;
     return { axisId, title: axisTitles[axisId] || axisId, correct: axisCorrect, total: rows.length, accuracy: Math.round(axisCorrect / rows.length * 100), averageSeconds: Math.round(rows.reduce((sum,a) => sum + a.seconds, 0) / rows.length) };
   });
+  const activeVersion=await ensureActiveInstrumentVersion('HSI Visual Cognitivo');
+  const studyCode=d.studyCode?.trim()||null;
+  const study=studyCode?await prisma.scientificStudy.findUnique({where:{code:studyCode}}):null;
+  if(studyCode&&(!study||study.status!=='ACTIVE'))return res.status(400).json({error:'Estudo não encontrado ou não está ativo para receber aplicações.'});
+  const studyGroup= d.studyGroupCode&&study ? await prisma.studyGroup.findUnique({where:{studyId_code:{studyId:study.id,code:d.studyGroupCode}}}) : null;
+  if(d.studyGroupCode&&!studyGroup)return res.status(400).json({error:'Grupo de pesquisa não pertence ao estudo informado.'});
   const result = await withSerializableRetry(() => prisma.$transaction(async tx => {
     const existing = await tx.assessmentResult.findUnique({where:{id:d.id}});
     if (existing) throw Object.assign(new Error('Identificador de resultado já utilizado.'), { status: 409 });
     const applicationNumber = await tx.assessmentResult.count({where:{userId:req.authUser!.id}}) + 1;
-    const studyCode = d.studyCode?.trim() || null;
     const created = await tx.assessmentResult.create({data:{
       id:d.id,userId:req.authUser!.id,participantCode:req.authUser!.participantCode || 'SEM-CÓDIGO',
       mode:d.mode,completedAt:new Date(d.completedAt),totalQuestions:verified.length,correct,accuracy,
       durationSeconds:d.durationSeconds,axes:axes as Prisma.InputJsonValue,answerDetails:verified as Prisma.InputJsonValue,
       applicationNumber,applicationType:studyCode?'EXPERIMENTAL':applicationNumber===1?'BASELINE':'REEVALUATION',
-      studyCode,instrumentVersion:d.instrumentVersion
+      studyCode,instrumentVersion:activeVersion.version,instrumentVersionId:activeVersion.id,
+      scoringSnapshot:activeVersion.scoringCriteria as Prisma.InputJsonValue,versionVerification:'VERIFIED',
+      studyId:study?.id||null,studyGroupId:studyGroup?.id||null
     }});
     await tx.auditLog.create({data:{actorId:req.authUser!.id,action:'ASSESSMENT_SUBMIT',targetType:'RESULT',targetId:created.id,metadata:{applicationNumber,applicationType:created.applicationType,studyCode}}});
     return created;
@@ -468,6 +476,7 @@ const instrumentResultSchema = z.object({
   contextVersion: z.string().max(20).default('1.0'),
   instrumentVersion: z.string().trim().min(1).max(20).default('1.0'),
   studyCode: z.string().trim().min(2).max(80).optional(),
+  studyGroupCode: z.string().trim().min(1).max(40).optional(),
   consentVersion: z.string().max(40).optional(),
   participantData: z.object({
     birthDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -529,11 +538,16 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
     ? await prisma.institution.findFirst({where:{active:true,name:{equals:profile.institutionName,mode:'insensitive'},city:{equals:profile.city,mode:'insensitive'},state:profile.state,type:profile.institutionType as any},select:{id:true}})
     : null;
   const scored = scoreDothp(data.answers, data.context);
+  const activeVersion=await ensureActiveInstrumentVersion('HSI-DOTH-P');
+  const studyCode=data.studyCode?.trim()||null;
+  const study=studyCode?await prisma.scientificStudy.findUnique({where:{code:studyCode}}):null;
+  if(studyCode&&(!study||study.status!=='ACTIVE'))return res.status(400).json({error:'Estudo não encontrado ou não está ativo para receber aplicações.'});
+  const studyGroup=data.studyGroupCode&&study?await prisma.studyGroup.findUnique({where:{studyId_code:{studyId:study.id,code:data.studyGroupCode}}}):null;
+  if(data.studyGroupCode&&!studyGroup)return res.status(400).json({error:'Grupo de pesquisa não pertence ao estudo informado.'});
   const result = await withSerializableRetry(() => prisma.$transaction(async tx => {
     const existing = await tx.instrumentAssessment.findUnique({where:{id:data.id}});
     if(existing) throw Object.assign(new Error('Identificador de avaliação já utilizado.'), {status:409});
     const applicationNumber = await tx.instrumentAssessment.count({where:{userId:req.authUser!.id,instrument:data.instrument}}) + 1;
-    const studyCode = data.studyCode?.trim() || null;
     const created = await tx.instrumentAssessment.create({
     data: {
       id: data.id,
@@ -541,7 +555,12 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
       instrument: data.instrument,
       context: data.context,
       contextVersion: data.contextVersion,
-      instrumentVersion: data.instrumentVersion,
+      instrumentVersion: activeVersion.version,
+      instrumentVersionId: activeVersion.id,
+      scoringSnapshot: activeVersion.scoringCriteria as Prisma.InputJsonValue,
+      versionVerification: 'VERIFIED',
+      studyId: study?.id || null,
+      studyGroupId: studyGroup?.id || null,
       applicationNumber,
       applicationType: studyCode?'EXPERIMENTAL':applicationNumber===1?'BASELINE':'REEVALUATION',
       studyCode,
@@ -1001,7 +1020,7 @@ app.get('/api/science/studies/compare',authenticate,allow(UserRole.ADMIN,UserRol
    const minimum=5;
    const cognitiveUsers=new Set(cognitive.map(x=>x.userId)).size,behavioralUsers=new Set(behavioral.map(x=>x.userId)).size;
    return {code:study.code,title:study.title,status:study.status,
-    cognitive:cognitiveUsers<minimum?{suppressed:true,minimumParticipants:minimum,participants:cognitiveUsers}:{suppressed:false,participants:cognitiveUsers,applications:cognitive.length,accuracy:cognitive.length?Math.round(cognitive.reduce((s,x)=>s+x.accuracy,0)/cognitive.length):null,versions:[...new Set(cognitive.map(x=>x.instrumentVersion))],legacyUnverified:cognitive.filter(x=>x.versionVerification!=='VERIFIED').length,axes:Object.entries(Object.groupBy?Object.groupBy(cognitive.flatMap(x=>x.axes as Array<any>),'axisId'):{})},
+    cognitive:cognitiveUsers<minimum?{suppressed:true,minimumParticipants:minimum,participants:cognitiveUsers}:{suppressed:false,participants:cognitiveUsers,applications:cognitive.length,accuracy:cognitive.length?Math.round(cognitive.reduce((s,x)=>s+x.accuracy,0)/cognitive.length):null,versions:[...new Set(cognitive.map(x=>x.instrumentVersion))],legacyUnverified:cognitive.filter(x=>x.versionVerification!=='VERIFIED').length,axes:(['logic','attention','patterns','anticipation','risk','decision']).map(axisId=>{const vals=cognitive.flatMap(x=>(x.axes as Array<any>).filter(a=>a.axisId===axisId).map(a=>Number(a.accuracy)));return{axisId,meanAccuracy:vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):null,n:vals.length};})},
     behavioral:behavioralUsers<minimum?{suppressed:true,minimumParticipants:minimum,participants:behavioralUsers}:{suppressed:false,participants:behavioralUsers,applications:behavioral.length,versions:[...new Set(behavioral.map(x=>x.instrumentVersion))],legacyUnverified:behavioral.filter(x=>x.versionVerification!=='VERIFIED').length,dimensions:(['decision','organization','time','humanization','psychocomportamental']).map(id=>{const vals=behavioral.flatMap(x=>(x.dimensions as Array<any>).filter(d=>d.id===id).map(d=>Number(d.score)));return{id,mean:vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):null,n:vals.length};})}
    };
  }));
