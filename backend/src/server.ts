@@ -393,11 +393,14 @@ app.post('/api/groups', authenticate, allow(UserRole.ADMIN), asyncRoute(async (r
 app.get('/api/questions', authenticate, asyncRoute(async (req, res) => {
   const mode = req.query.mode;
   const axisId = typeof req.query.axisId === 'string' ? req.query.axisId : undefined;
-  if (mode === 'full') return res.json({ questions: questions.map(({ id, axis, prompt, visual, options }) => ({ id, axis, prompt, visual, options })) });
+  const version=await ensureActiveInstrumentVersion('HSI Visual Cognitivo');
+  const bank=version.questions as Array<any>;
+  const safe=bank.map(({id,axis,prompt,visual,options}:any)=>({id,axis,prompt,visual,options}));
+  if (mode === 'full') return res.json({ questions: safe, instrumentVersion:version.version });
   if (mode === 'axis' && axisId && ['logic','attention','patterns','anticipation','risk','decision'].includes(axisId)) {
-    const delivered = questions.filter(q => q.axis === axisId).map(({ id, axis, prompt, visual, options }) => ({ id, axis, prompt, visual, options }));
-    if (delivered.length !== 5) return res.status(500).json({ error: 'Banco de questões inconsistente.' });
-    return res.json({ questions: delivered });
+    const delivered = safe.filter(q => q.axis === axisId);
+    if (delivered.length !== 5) return res.status(500).json({ error: 'Banco de questões inconsistente na versão ativa.' });
+    return res.json({ questions: delivered, instrumentVersion:version.version });
   }
   return res.status(400).json({ error: 'Modalidade ou eixo inválido.' });
 }));
@@ -419,7 +422,9 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
   const parsed=resultSchema.safeParse(req.body);
   if(!parsed.success) return res.status(400).json({error:'Resultado inválido.',details:parsed.error.flatten()});
   const d=parsed.data;
-  const bank = new Map(questions.map((q: any) => [q.id, q] as [string, any]));
+  const activeVersion=await ensureActiveInstrumentVersion('HSI Visual Cognitivo');
+  const versionQuestions=activeVersion.questions as Array<any>;
+  const bank = new Map(versionQuestions.map((q: any) => [q.id, q] as [string, any]));
   if (d.answerDetails.length !== d.totalQuestions) return res.status(400).json({error:'Quantidade de respostas não corresponde ao total informado.'});
   const seen = new Set<string>();
   const verified = d.answerDetails.map((raw: Record<string, unknown>) => {
@@ -442,7 +447,6 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
     const axisCorrect = rows.filter(a => a.correct).length;
     return { axisId, title: axisTitles[axisId] || axisId, correct: axisCorrect, total: rows.length, accuracy: Math.round(axisCorrect / rows.length * 100), averageSeconds: Math.round(rows.reduce((sum,a) => sum + a.seconds, 0) / rows.length) };
   });
-  const activeVersion=await ensureActiveInstrumentVersion('HSI Visual Cognitivo');
   const studyCode=d.studyCode?.trim()||null;
   const study=studyCode?await prisma.scientificStudy.findUnique({where:{code:studyCode}}):null;
   if(studyCode&&(!study||study.status!=='ACTIVE'))return res.status(400).json({error:'Estudo não encontrado ou não está ativo para receber aplicações.'});
@@ -537,8 +541,8 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
   const linkedInstitution = profile?.institutionName && profile.institutionType!=='INDEPENDENT' && ['SCHOOL','COMPANY','PUBLIC_AGENCY','RESEARCH_CENTER','OTHER'].includes(profile.institutionType)
     ? await prisma.institution.findFirst({where:{active:true,name:{equals:profile.institutionName,mode:'insensitive'},city:{equals:profile.city,mode:'insensitive'},state:profile.state,type:profile.institutionType as any},select:{id:true}})
     : null;
-  const scored = scoreDothp(data.answers, data.context);
   const activeVersion=await ensureActiveInstrumentVersion('HSI-DOTH-P');
+  const scored = scoreDothp(data.answers, data.context, activeVersion.questions as Array<Record<string, any>>, activeVersion.scoringCriteria as Record<string, any>);
   const studyCode=data.studyCode?.trim()||null;
   const study=studyCode?await prisma.scientificStudy.findUnique({where:{code:studyCode}}):null;
   if(studyCode&&(!study||study.status!=='ACTIVE'))return res.status(400).json({error:'Estudo não encontrado ou não está ativo para receber aplicações.'});
@@ -928,6 +932,10 @@ const versionInputSchema=z.object({
   questions:z.array(z.record(z.string(),z.unknown())).max(300),
   scoringCriteria:z.record(z.string(),z.unknown())
 }).strict();
+app.get('/api/instrument-definition',authenticate,asyncRoute(async(_req,res)=>{
+ const version=await ensureActiveInstrumentVersion('HSI-DOTH-P');
+ res.json({instrument:version.instrument,version:version.version,questions:version.questions,scoringCriteria:version.scoringCriteria});
+}));
 app.get('/api/science/overview',authenticate,allow(UserRole.ADMIN,UserRole.ANALYST),asyncRoute(async(_req,res)=>{
   await Promise.all(instrumentNames.map(name=>ensureActiveInstrumentVersion(name)));
   const [versions,protocols,studies]=await Promise.all([
