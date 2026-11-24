@@ -5,6 +5,7 @@ import ProfessionalReportsCenter from './ProfessionalReportsCenter';
 import ResearchCenter from './ResearchCenter';
 import AdvancedAnalytics from './AdvancedAnalytics';
 import DataQualityPanel from './DataQualityPanel';
+import ScientificGovernance from './ScientificGovernance';
 
 type Props = { role: 'ADMIN' | 'ANALYST' | 'PARTICIPANT' };
 type Person = { id:string; name:string; email:string; role:string; status:string; participantCode:string|null; groupId:string|null; group?:{name:string}|null };
@@ -27,7 +28,7 @@ function ResponseBars({data}:{data:NonNullable<Analytics['responseTimes']>}) {
 }
 
 export default function AdminPanel({role}:Props) {
- const [tab,setTab]=useState<'command'|'intelligence'|'overview'|'participants'|'groups'|'reports'|'research'|'quality'>('command');
+ const [tab,setTab]=useState<'command'|'intelligence'|'overview'|'participants'|'groups'|'reports'|'research'|'quality'|'science'>('command');
  const [commandData,setCommandData]=useState<any>(null);
  const [from,setFrom]=useState(new Date(Date.now()-30*86400000).toISOString().slice(0,10));
  const [to,setTo]=useState(new Date().toISOString().slice(0,10));
@@ -103,6 +104,7 @@ export default function AdminPanel({role}:Props) {
    <button className={tab==='reports'?'selected':''} onClick={()=>setTab('reports')}>Relatórios</button>
    {(role==='ADMIN'||role==='ANALYST')&&<button className={tab==='research'?'selected':''} onClick={()=>setTab('research')}>Centro de pesquisas</button>}
    {(role==='ADMIN'||role==='ANALYST')&&<button className={tab==='quality'?'selected':''} onClick={()=>setTab('quality')}>Qualidade dos dados</button>}
+   {(role==='ADMIN'||role==='ANALYST')&&<button className={tab==='science'?'selected':''} onClick={()=>setTab('science')}>Gestão científica</button>}
   </nav>
   {notice&&<div className="notice success">{notice}</div>}{error&&<div className="notice error">{error}</div>}
 
@@ -114,6 +116,7 @@ export default function AdminPanel({role}:Props) {
   </div>}
   {tab==='intelligence'&&(role==='ADMIN'||role==='ANALYST')&&<AdvancedAnalytics/>}
   {tab==='quality'&&(role==='ADMIN'||role==='ANALYST')&&<DataQualityPanel/>}
+  {tab==='science'&&(role==='ADMIN'||role==='ANALYST')&&<ScientificGovernance/>}
   {tab==='overview'&&<div className="admin-content">
    <div className="filters"><label>De<input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>Até<input type="date" value={to} onChange={e=>setTo(e.target.value)}/></label><label>Grupo<select value={groupId} onChange={e=>setGroupId(e.target.value)}><option value="">Todos os grupos</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></label><button className="primary" onClick={()=>void load()}>Aplicar filtros</button><button className="secondary" onClick={()=>window.print()}>Imprimir relatório</button></div>
    {analytics&&<><div className="metric-grid"><article><small>AVALIAÇÕES</small><strong>{analytics.summary.assessments}</strong></article><article><small>PARTICIPANTES</small><strong>{analytics.summary.participants}</strong></article><article><small>QUESTÕES RESPONDIDAS</small><strong>{analytics.summary.totalQuestions}</strong></article><article><small>PRECISÃO AGREGADA</small><strong>{analytics.summary.accuracy}%</strong></article></div>

@@ -91,6 +91,14 @@ model AssessmentResult {
   applicationType   String @default("BASELINE")
   studyCode         String?
   instrumentVersion String @default("1.0")
+  instrumentVersionId String?
+  instrumentVersionRecord InstrumentVersion? @relation(fields: [instrumentVersionId], references: [id], onDelete: SetNull)
+  scoringSnapshot Json @default("{}")
+  versionVerification String @default("UNVERIFIED_LEGACY")
+  studyId String?
+  study ScientificStudy? @relation(fields: [studyId], references: [id], onDelete: SetNull)
+  studyGroupId String?
+  studyGroup StudyGroup? @relation(fields: [studyGroupId], references: [id], onDelete: SetNull)
 
   @@unique([userId, applicationNumber])
   @@index([applicationType, completedAt])
@@ -153,6 +161,14 @@ model InstrumentAssessment {
   applicationType   String @default("BASELINE")
   studyCode         String?
   instrumentVersion String @default("1.0")
+  instrumentVersionId String?
+  instrumentVersionRecord InstrumentVersion? @relation(fields: [instrumentVersionId], references: [id], onDelete: SetNull)
+  scoringSnapshot Json @default("{}")
+  versionVerification String @default("UNVERIFIED_LEGACY")
+  studyId String?
+  study ScientificStudy? @relation(fields: [studyId], references: [id], onDelete: SetNull)
+  studyGroupId String?
+  studyGroup StudyGroup? @relation(fields: [studyGroupId], references: [id], onDelete: SetNull)
 
   @@unique([userId, instrument, applicationNumber])
   @@index([applicationType, completedAt])
@@ -178,4 +194,88 @@ model Institution {
 
   @@index([state, city])
   @@index([type, active])
+}
+
+
+enum ScientificStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+model InstrumentVersion {
+  id             String   @id @default(cuid())
+  instrument     String
+  version        String
+  status         String   @default("DRAFT")
+  changeSummary  String
+  questions      Json
+  scoringCriteria Json
+  createdBy      String?
+  publishedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  cognitiveResults AssessmentResult[]
+  behavioralResults InstrumentAssessment[]
+  @@unique([instrument, version])
+  @@index([instrument, status])
+}
+
+model StudyProtocol {
+  id                     String   @id @default(cuid())
+  title                  String
+  version                String   @default("1.0")
+  researchQuestion       String
+  hypothesis             String
+  targetPopulation       String
+  inclusionCriteria      String
+  exclusionCriteria      String
+  samplingStrategy       String
+  sampleSizeRationale    String
+  analysisPlan           String
+  ethicalConsiderations  String?
+  createdBy              String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  studies                ScientificStudy[]
+  @@index([title])
+}
+
+model ScientificStudy {
+  id                String   @id @default(cuid())
+  code              String   @unique
+  title             String
+  description       String?
+  hypothesis        String
+  targetPopulation  String
+  inclusionCriteria String
+  exclusionCriteria String?
+  samplingPlan      String
+  analysisPlan      String
+  status            ScientificStatus @default(DRAFT)
+  protocolId        String?
+  protocol          StudyProtocol? @relation(fields: [protocolId], references: [id], onDelete: SetNull)
+  groups            StudyGroup[]
+  cognitiveResults  AssessmentResult[]
+  behavioralResults InstrumentAssessment[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  @@index([status, createdAt])
+}
+
+model StudyGroup {
+  id          String   @id @default(cuid())
+  studyId     String
+  study       ScientificStudy @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  code        String
+  name        String
+  arm         String
+  description String?
+  createdAt   DateTime @default(now())
+  cognitiveResults AssessmentResult[]
+  behavioralResults InstrumentAssessment[]
+  @@unique([studyId, code])
+  @@index([studyId, arm])
 }

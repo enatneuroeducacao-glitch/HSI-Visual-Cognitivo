@@ -106,6 +106,8 @@ function App() {
   const [consentUpdating, setConsentUpdating] = useState(false);
   const [consentFeedback, setConsentFeedback] = useState('');
   const [mode, setMode] = useState('full');
+  const [studyCode,setStudyCode] = useState('');
+  const [studyGroupCode,setStudyGroupCode] = useState('');
   const [runQuestions, setRunQuestions] = useState<Question[]>([]);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
@@ -375,6 +377,7 @@ function App() {
       totalQuestions: finalAnswers.length,
       durationSeconds: totalSeconds,
       instrumentVersion: '1.0',
+      ...(studyCode.trim()?{studyCode:studyCode.trim().toUpperCase(),...(studyGroupCode.trim()?{studyGroupCode:studyGroupCode.trim().toUpperCase()}:{})}:{}),
       answerDetails: finalAnswers.map(({ questionId, axisId, selected, seconds }) => ({ questionId, axisId, selected, seconds })),
     };
     setSaving(true);
@@ -563,6 +566,7 @@ function App() {
                 {consentFeedback && <small className="public-consent-feedback" role="status">{consentFeedback}</small>}
               </div>
             )}
+            <div className="science-study-enrollment"><label>Código do estudo (se você recebeu um código de pesquisa)<input value={studyCode} onChange={e=>setStudyCode(e.target.value.toUpperCase())} placeholder="Opcional · código fornecido pela equipe de pesquisa"/></label><label>Grupo de pesquisa (opcional)<input value={studyGroupCode} onChange={e=>setStudyGroupCode(e.target.value.toUpperCase())} placeholder="Código do grupo informado pelo pesquisador"/></label><small>Se não estiver participando de um estudo, deixe os campos em branco.</small></div>
             <ResearchProfile user={user} onSaved={setUser} />
             <div className="section-heading">
               <div>
