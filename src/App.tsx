@@ -565,7 +565,7 @@ function App() {
         {view === 'dothp' && <DothpAssessment participantData={user.researchProfile} resumeDraft={resumeBehavioralSession} />}
 
         {view === 'home' && (
-          <>
+          <div className="participant-home-shell">
           <ParticipantExperience
             participantName={user.name || ''}
             publicAccess={Boolean(user.publicAccess)}
@@ -582,7 +582,7 @@ function App() {
             onPrivacy={() => setView('privacy')}
           />
           <div className="participant-profile-panel"><ResearchProfile user={user} onSaved={setUser} /></div>
-          </>
+          </div>
         )}
 
         {view === 'cognitive-intro' && (
