@@ -1567,3 +1567,5 @@ button:disabled {
 .science-event-details{display:grid;gap:5px;margin-top:8px;padding:10px;border-radius:8px;background:#f6f8fc;color:#5c6d84;font-size:11px}
 .science-event-details span{overflow-wrap:anywhere}
 @media(max-width:720px){.science-field-grid,.science-weight-list,.science-snapshot-grid{grid-template-columns:1fr}.science-reverse-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.science-editor-heading{align-items:flex-start;flex-direction:column}}
+
+.science-option-row{grid-template-columns:100px minmax(0,1fr) auto}.science-option-remove{border:0;background:#fff0f0;color:#a13c3c;border-radius:7px;padding:7px 9px;font-size:11px}.science-option-remove:disabled{opacity:.35;cursor:not-allowed}
