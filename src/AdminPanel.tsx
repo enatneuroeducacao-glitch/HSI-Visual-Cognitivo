@@ -108,6 +108,7 @@ export default function AdminPanel({role}:Props) {
    {(role==='ADMIN'||role==='ANALYST')&&<button className={tab==='quality'?'selected':''} onClick={()=>setTab('quality')}>Qualidade dos dados</button>}
    {(role==='ADMIN'||role==='ANALYST')&&<button className={tab==='science'?'selected':''} onClick={()=>setTab('science')}>Gestão científica</button>}
    {(role==='ADMIN'||role==='ANALYST')&&<button className={tab==='validation'?'selected':''} onClick={()=>setTab('validation')}>Validação científica</button>}
+    {role==='ADMIN'&&<button className={tab==='privacy'?'selected':''} onClick={()=>setTab('privacy')}>Privacidade e LGPD</button>}
   </nav>
   {notice&&<div className="notice success">{notice}</div>}{error&&<div className="notice error">{error}</div>}
 

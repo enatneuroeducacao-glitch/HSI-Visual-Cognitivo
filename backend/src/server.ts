@@ -477,6 +477,9 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
   const parsed=resultSchema.safeParse(req.body);
   if(!parsed.success) return res.status(400).json({error:'Resultado inválido.',details:parsed.error.flatten()});
   const d=parsed.data;
+  // The authenticated account is the source of truth; ignore any client-supplied consent flag.
+  const consentState=await prisma.user.findUnique({where:{id:req.authUser!.id},select:{researchConsentGranted:true}});
+  const researchConsentGranted=Boolean(consentState?.researchConsentGranted);
   const activeVersion=await ensureActiveInstrumentVersion('HSI Visual Cognitivo');
   const versionQuestions=activeVersion.questions as Array<any>;
   const bank = new Map(versionQuestions.map((q: any) => [q.id, q] as [string, any]));
@@ -520,10 +523,10 @@ app.post('/api/results', authenticate, asyncRoute(async (req,res) => {
       applicationNumber,applicationType:studyCode?'EXPERIMENTAL':applicationNumber===1?'BASELINE':'REEVALUATION',
       studyCode,instrumentVersion:activeVersion.version,instrumentVersionId:activeVersion.id,
       scoringSnapshot:activeVersion.scoringCriteria as Prisma.InputJsonValue,versionVerification:'VERIFIED',
-      researchConsentGranted:d.researchConsent,researchConsentVersion:RESEARCH_CONSENT_VERSION,researchConsentedAt:d.researchConsent?new Date():null,
+      researchConsentGranted,researchConsentVersion:RESEARCH_CONSENT_VERSION,researchConsentedAt:researchConsentGranted?new Date():null,
       studyId:study?.id||null,studyGroupId:studyGroup?.id||null
     }});
-    await tx.consentEvent.create({data:{userId:req.authUser!.id,purpose:'RESEARCH_USE',granted:d.researchConsent,consentVersion:RESEARCH_CONSENT_VERSION,instrument:'HSI Visual Cognitivo',assessmentId:created.id,source:'ASSESSMENT_SUBMISSION'}});
+    await tx.consentEvent.create({data:{userId:req.authUser!.id,purpose:'RESEARCH_USE',granted:researchConsentGranted,consentVersion:RESEARCH_CONSENT_VERSION,instrument:'HSI Visual Cognitivo',assessmentId:created.id,source:'ASSESSMENT_SUBMISSION'}});
     await tx.auditLog.create({data:{actorId:req.authUser!.id,action:'ASSESSMENT_SUBMIT',targetType:'RESULT',targetId:created.id,metadata:{applicationNumber,applicationType:created.applicationType,studyCode}}});
     return created;
   }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable}));
@@ -592,7 +595,8 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
   const data = parsed.data;
   const existing = await prisma.instrumentAssessment.findUnique({ where: { id: data.id } });
   if (existing) return res.status(409).json({ error: 'Identificador de avaliação já utilizado.' });
-  const participant = await prisma.user.findUnique({where:{id:req.authUser!.id},select:{groupId:true,group:{select:{institutionId:true,city:true,state:true,institution:{select:{city:true,state:true}}}}}});
+  const participant = await prisma.user.findUnique({where:{id:req.authUser!.id},select:{groupId:true,researchConsentGranted:true,group:{select:{institutionId:true,city:true,state:true,institution:{select:{city:true,state:true}}}}}});
+  const researchConsentGranted=Boolean(participant?.researchConsentGranted);
   const profile = data.participantData;
   const birthDateValue = profile ? new Date(profile.birthDate+'T00:00:00.000Z') : null;
   if(profile && (!birthDateValue || Number.isNaN(birthDateValue.getTime()) || birthDateValue.toISOString().slice(0,10)!==profile.birthDate))return res.status(400).json({error:'Data de nascimento inválida.'});
@@ -645,7 +649,7 @@ app.post('/api/instrument-results', authenticate, asyncRoute(async (req,res) => 
       dimensions: scored.dimensions as Prisma.InputJsonValue,
     },
     });
-    await tx.consentEvent.create({data:{userId:req.authUser!.id,purpose:'RESEARCH_USE',granted:data.researchConsent,consentVersion:RESEARCH_CONSENT_VERSION,instrument:'HSI-DOTH-P',assessmentId:created.id,source:'ASSESSMENT_SUBMISSION'}});
+    await tx.consentEvent.create({data:{userId:req.authUser!.id,purpose:'RESEARCH_USE',granted:researchConsentGranted,consentVersion:RESEARCH_CONSENT_VERSION,instrument:'HSI-DOTH-P',assessmentId:created.id,source:'ASSESSMENT_SUBMISSION'}});
     await tx.auditLog.create({ data: { actorId: req.authUser!.id, action: 'INSTRUMENT_SUBMIT', targetType: 'INSTRUMENT_RESULT', targetId: created.id, metadata: { instrument: data.instrument, context: data.context, applicationNumber, applicationType:created.applicationType, studyCode } } });
     return created;
   }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable}));

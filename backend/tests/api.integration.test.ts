@@ -130,6 +130,25 @@ test('API recalcula pontuação, valida modalidade e ignora código de participa
   assert.equal(incomplete.status, 400);
 });
 
+test('consentimento enviado pelo cliente não autoriza inclusão em pesquisa sem concessão registrada', async () => {
+  const { questions } = await import('../src/question-bank.js');
+  const answers = questions.map((q: any) => ({ questionId: q.id, axisId: q.axis, selected: q.answer, seconds: 12 }));
+  const payload = {
+    id: suffix + '-spoofed-consent',
+    mode: 'Avaliação completa',
+    completedAt: new Date().toISOString(),
+    totalQuestions: answers.length,
+    durationSeconds: answers.length * 12,
+    researchConsent: true,
+    answerDetails: answers,
+  };
+  const response = await request(app).post('/api/results').set('Authorization', 'Bearer ' + tokenFor(ids.participant)).send(payload);
+  assert.equal(response.status, 201);
+  assert.equal(response.body.result.researchConsentGranted, false);
+  const event = await prisma.consentEvent.findFirst({ where: { userId: ids.participant, assessmentId: payload.id } });
+  assert.equal(event?.granted, false);
+});
+
 test('token assinado com emissor diferente é recusado', async () => {
   const wrongIssuer = jwt.sign({}, secret, { subject: ids.participant, expiresIn: '10m', issuer: 'outro-servico' });
   const response = await request(app).get('/api/auth/me').set('Authorization', 'Bearer ' + wrongIssuer);
